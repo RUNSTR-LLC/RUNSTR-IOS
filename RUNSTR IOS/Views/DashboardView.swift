@@ -5,9 +5,11 @@ struct DashboardView: View {
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var authService: AuthenticationService
+    @EnvironmentObject var walletService: BitcoinWalletService
     
     @State private var selectedActivityType: ActivityType = .running
     @State private var showingWorkoutView = false
+    @State private var showingWalletView = false
     
     var body: some View {
         NavigationView {
@@ -40,6 +42,9 @@ struct DashboardView: View {
         .sheet(isPresented: $showingWorkoutView) {
             WorkoutView(activityType: selectedActivityType)
         }
+        .sheet(isPresented: $showingWalletView) {
+            WalletView()
+        }
     }
     
     private var headerSection: some View {
@@ -50,15 +55,19 @@ struct DashboardView: View {
             
             Spacer()
             
-            // Bitcoin balance
-            HStack(spacing: 8) {
-                Image(systemName: "bitcoinsign.circle.fill")
-                    .foregroundColor(.white)
-                    .font(.title3)
-                
-                Text("21,000")
-                    .font(.system(size: 16, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white)
+            // Bitcoin balance - tappable to open wallet
+            Button {
+                showingWalletView = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bitcoinsign.circle.fill")
+                        .foregroundColor(.white)
+                        .font(.title3)
+                    
+                    Text(walletService.formatSats(walletService.balance))
+                        .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white)
+                }
             }
         }
         .padding(.horizontal, 20)

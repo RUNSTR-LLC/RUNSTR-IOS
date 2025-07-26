@@ -24,6 +24,16 @@ class AuthenticationService: NSObject, ObservableObject {
         }
     }
     
+    func signInWithNostr(npub: String) {
+        print("🚀 Starting Nostr Sign-In with npub: \(npub)")
+        isLoading = true
+        
+        // Mock implementation - in production, fetch user profile from Nostr relays
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.createNostrUser(mainNpub: npub)
+        }
+    }
+    
     private func createMockUser() {
         print("✅ Creating mock user for development")
         
@@ -49,6 +59,44 @@ class AuthenticationService: NSObject, ObservableObject {
             self.isAuthenticated = true
             self.isLoading = false
             print("✅ Mock authentication complete - isAuthenticated: \(self.isAuthenticated)")
+        }
+    }
+    
+    private func createNostrUser(mainNpub: String) {
+        print("✅ Creating Nostr user for npub: \(mainNpub)")
+        
+        // Generate RUNSTR-specific keys for workout storage
+        let runstrNostrKeys = NostrKeyPair.generate()
+        print("✅ RUNSTR Nostr keys generated")
+        
+        saveNostrKeysToKeychain(runstrNostrKeys)
+        print("✅ RUNSTR keys saved to keychain")
+        
+        // Mock Nostr profile data - in production, fetch from relays
+        let mockProfile = NostrProfile(
+            displayName: "Nostr Runner",
+            about: "Bitcoin fitness enthusiast",
+            picture: nil,
+            banner: nil,
+            nip05: nil
+        )
+        
+        let user = User(
+            mainNostrPublicKey: mainNpub,
+            runstrNostrKeys: runstrNostrKeys,
+            profile: mockProfile
+        )
+        print("✅ Nostr user object created")
+        
+        saveUserToKeychain(user)
+        print("✅ Nostr user saved to keychain")
+        
+        DispatchQueue.main.async {
+            print("✅ Setting Nostr authentication state")
+            self.currentUser = user
+            self.isAuthenticated = true
+            self.isLoading = false
+            print("✅ Nostr authentication complete - isAuthenticated: \(self.isAuthenticated)")
         }
     }
     

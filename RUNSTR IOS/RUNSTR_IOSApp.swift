@@ -13,6 +13,9 @@ struct RUNSTR_IOSApp: App {
     @StateObject private var healthKitService = HealthKitService()
     @StateObject private var locationService = LocationService()
     @StateObject private var workoutSession = WorkoutSession()
+    @StateObject private var subscriptionService = SubscriptionService()
+    @StateObject private var walletService = BitcoinWalletService()
+    @StateObject private var nostrService = NostrService()
     
     var body: some Scene {
         WindowGroup {
@@ -21,6 +24,9 @@ struct RUNSTR_IOSApp: App {
                 .environmentObject(healthKitService)
                 .environmentObject(locationService)
                 .environmentObject(workoutSession)
+                .environmentObject(subscriptionService)
+                .environmentObject(walletService)
+                .environmentObject(nostrService)
                 .preferredColorScheme(.dark)
         }
     }
