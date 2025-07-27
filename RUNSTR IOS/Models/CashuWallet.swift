@@ -116,16 +116,6 @@ enum TransactionStatus: String, Codable {
     case failed = "failed"
 }
 
-private struct CashuToken: Codable {
-    let mint: String
-    let proofs: [CashuProof]
-}
-
-private struct CashuProof: Codable {
-    let amount: Int
-    let secret: String
-    let C: String // Commitment
-}
 
 struct RewardCalculator {
     static func calculateWorkoutReward(workout: Workout, userStats: UserStats) -> Int {

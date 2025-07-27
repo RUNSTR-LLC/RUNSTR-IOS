@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- HealthKit Privacy Descriptions -->
+    <key>NSHealthShareUsageDescription</key>
+    <string>RUNSTR needs access to read your health data including heart rate, workouts, and activity data to track your fitness activities and provide accurate metrics.</string>
+    
+    <key>NSHealthUpdateUsageDescription</key>
+    <string>RUNSTR needs permission to save your workout data to HealthKit so it can be shared with other health apps and your Apple Watch.</string>
+    
+    <!-- Location Privacy Descriptions -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>RUNSTR needs access to your location to track your route, distance, and pace during workouts.</string>
+    
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>RUNSTR needs location access to continue tracking your workout in the background, ensuring accurate distance and route recording even when the app is not active.</string>
+    
+    <!-- Background Modes -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+        <string>background-processing</string>
+    </array>
+    
+    <!-- App Configuration -->
+    <key>CFBundleDisplayName</key>
+    <string>RUNSTR</string>
+    
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    
+    <key>UILaunchScreen</key>
+    <dict/>
+    
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    
+    <!-- Minimum iOS Version -->
+    <key>MinimumOSVersion</key>
+    <string>17.0</string>
+</dict>
+</plist>

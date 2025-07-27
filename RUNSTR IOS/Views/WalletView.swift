@@ -2,9 +2,12 @@ import SwiftUI
 
 struct WalletView: View {
     @StateObject private var walletService = BitcoinWalletService()
+    @EnvironmentObject var cashuService: CashuService
     @State private var showingSendView = false
     @State private var showingReceiveView = false
     @State private var showingFundingOptions = false
+    @State private var showingCashuSend = false
+    @State private var showingCashuReceive = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -24,11 +27,11 @@ struct WalletView: View {
         }
         .background(Color.black)
         .foregroundColor(.white)
-        .sheet(isPresented: $showingSendView) {
-            SendBitcoinView(walletService: walletService)
+        .sheet(isPresented: $showingCashuSend) {
+            CashuSendView()
         }
-        .sheet(isPresented: $showingReceiveView) {
-            ReceiveBitcoinView(walletService: walletService)
+        .sheet(isPresented: $showingCashuReceive) {
+            CashuReceiveView()
         }
         .sheet(isPresented: $showingFundingOptions) {
             GiftCardStoreView(walletService: walletService)
@@ -66,23 +69,21 @@ struct WalletView: View {
     private var balanceSection: some View {
         VStack(spacing: 16) {
             VStack(spacing: 8) {
-                Text("Total Balance")
+                Text("Cashu Balance")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.gray)
                 
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(walletService.formatSats(walletService.balance))
+                    Image(systemName: "bitcoinsign.circle.fill")
+                        .foregroundColor(.orange)
+                        .font(.title2)
+                    
+                    Text(walletService.formatSats(cashuService.balance))
                         .font(.system(size: 32, weight: .bold, design: .monospaced))
                         .foregroundColor(.white)
-                    
-                    if walletService.isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    }
                 }
                 
-                Text("≈ $\(String(format: "%.2f", walletService.convertToFiat(sats: walletService.balance)))")
+                Text("≈ $\(String(format: "%.2f", walletService.convertToFiat(sats: cashuService.balance)))")
                     .font(.system(size: 16, weight: .regular))
                     .foregroundColor(.gray)
             }
@@ -90,7 +91,7 @@ struct WalletView: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 2)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
             )
             
             if let errorMessage = walletService.errorMessage {
@@ -110,26 +111,26 @@ struct WalletView: View {
     }
     
     private var actionButtonsSection: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             WalletActionButton(
-                title: "Send",
+                title: "Send Tokens",
                 icon: "arrow.up.circle.fill",
-                color: .red
+                color: .orange
             ) {
-                showingSendView = true
+                showingCashuSend = true
             }
             
             WalletActionButton(
-                title: "Receive",
+                title: "Receive Tokens",
                 icon: "arrow.down.circle.fill",
                 color: .green
             ) {
-                showingReceiveView = true
+                showingCashuReceive = true
             }
             
             WalletActionButton(
-                title: "Spend",
-                icon: "gift.circle.fill",
+                title: "Withdraw",
+                icon: "bolt.circle.fill",
                 color: .blue
             ) {
                 showingFundingOptions = true

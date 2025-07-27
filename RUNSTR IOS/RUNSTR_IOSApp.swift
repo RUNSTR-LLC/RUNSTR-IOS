@@ -16,6 +16,11 @@ struct RUNSTR_IOSApp: App {
     @StateObject private var subscriptionService = SubscriptionService()
     @StateObject private var walletService = BitcoinWalletService()
     @StateObject private var nostrService = NostrService()
+    @StateObject private var cashuService = CashuService()
+    
+    init() {
+        // Configuration will be done in onAppear
+    }
     
     var body: some Scene {
         WindowGroup {
@@ -27,7 +32,32 @@ struct RUNSTR_IOSApp: App {
                 .environmentObject(subscriptionService)
                 .environmentObject(walletService)
                 .environmentObject(nostrService)
+                .environmentObject(cashuService)
                 .preferredColorScheme(.dark)
+                .task {
+                    // Configure workout session with services first
+                    workoutSession.configure(
+                        healthKitService: healthKitService,
+                        locationService: locationService
+                    )
+                    
+                    // Request permissions on app startup
+                    await requestInitialPermissions()
+                    
+                    // Initialize Cashu connection
+                    await cashuService.connectToMint()
+                }
         }
+    }
+    
+    @MainActor
+    private func requestInitialPermissions() async {
+        // Request HealthKit authorization
+        let _ = await healthKitService.requestAuthorization()
+        
+        // Request location permission
+        locationService.requestLocationPermission()
+        
+        print("✅ Initial permissions requested")
     }
 }

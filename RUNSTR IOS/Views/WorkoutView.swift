@@ -9,6 +9,7 @@ struct WorkoutView: View {
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var authService: AuthenticationService
+    @EnvironmentObject var cashuService: CashuService
     
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
@@ -33,10 +34,12 @@ struct WorkoutView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
-                        if workoutSession.isActive {
-                            _ = workoutSession.endWorkout()
+                        Task {
+                            if workoutSession.isActive {
+                                _ = await workoutSession.endWorkout()
+                            }
+                            dismiss()
                         }
-                        dismiss()
                     }
                 }
             }
@@ -188,10 +191,13 @@ struct WorkoutView: View {
     private func startWorkout() {
         guard let userID = authService.currentUser?.id else { return }
         
-        locationService.startTracking()
-        workoutSession.startWorkout(activityType: activityType, userID: userID)
-        
-        _ = healthKitService.startWorkoutSession(activityType: activityType)
+        Task {
+            locationService.startTracking()
+            let success = await workoutSession.startWorkout(activityType: activityType, userID: userID)
+            if !success {
+                print("❌ Failed to start workout session")
+            }
+        }
     }
     
     private func pauseWorkout() {
@@ -205,21 +211,79 @@ struct WorkoutView: View {
     }
     
     private func endWorkout() {
-        locationService.stopTracking()
-        
-        if let completedWorkout = workoutSession.endWorkout() {
-            // Here you would:
-            // 1. Save to HealthKit
-            // 2. Create Nostr event
-            // 3. Award sats
-            // 4. Update user stats
+        Task {
+            locationService.stopTracking()
             
-            healthKitService.saveWorkout(completedWorkout) { success in
-                print("Workout saved to HealthKit: \(success)")
+            if let completedWorkout = await workoutSession.endWorkout() {
+                // 1. Save to HealthKit
+                healthKitService.saveWorkout(completedWorkout) { success in
+                    print("Workout saved to HealthKit: \(success)")
+                }
+                
+                // 2. Award Cashu tokens for workout
+                await awardWorkoutReward(for: completedWorkout)
+                
+                // 3. Create Nostr event (if connected)
+                // TODO: Implement Nostr event publishing
+                
+                // 4. Update user stats
+                // TODO: Update user statistics
             }
+            
+            dismiss()
+        }
+    }
+    
+    /// Award Cashu tokens based on workout performance
+    private func awardWorkoutReward(for workout: Workout) async {
+        // Calculate reward based on workout metrics
+        let rewardAmount = calculateWorkoutReward(workout)
+        
+        guard rewardAmount > 0 else {
+            print("❌ No reward calculated for workout")
+            return
         }
         
-        dismiss()
+        do {
+            // Create tokens directly in user's wallet
+            // In a real implementation, these would be minted from a funding source
+            let tokenString = try await cashuService.requestTokens(amount: rewardAmount)
+            
+            print("✅ Awarded \(rewardAmount) sats for \(workout.activityType.displayName) workout")
+            print("🏃‍♂️ Distance: \(String(format: "%.2f", workout.distance/1000))km")
+            print("⏱️ Duration: \(formatTime(workout.duration))")
+            
+        } catch {
+            print("❌ Failed to award workout reward: \(error)")
+        }
+    }
+    
+    /// Calculate reward amount based on workout metrics
+    private func calculateWorkoutReward(_ workout: Workout) -> Int {
+        let distanceKm = workout.distance / 1000
+        let durationMinutes = workout.duration / 60
+        
+        // Base reward calculation
+        let distanceReward = Int(distanceKm * 50) // 50 sats per km
+        let timeReward = Int(durationMinutes * 5) // 5 sats per minute
+        let baseReward = max(100, distanceReward + timeReward) // Minimum 100 sats
+        
+        // Bonus multipliers
+        var bonusMultiplier = 1.0
+        
+        // Distance bonus
+        if distanceKm >= 10.0 {
+            bonusMultiplier += 0.5 // 50% bonus for 10k+
+        } else if distanceKm >= 5.0 {
+            bonusMultiplier += 0.25 // 25% bonus for 5k+
+        }
+        
+        // Pace bonus (under 5 min/km is good pace)
+        if workout.averagePace < 5.0 {
+            bonusMultiplier += 0.3 // 30% bonus for good pace
+        }
+        
+        return Int(Double(baseReward) * bonusMultiplier)
     }
     
     private func formatTime(_ timeInterval: TimeInterval) -> String {
