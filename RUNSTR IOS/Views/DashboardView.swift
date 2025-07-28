@@ -1,15 +1,18 @@
 import SwiftUI
+import HealthKit
 
 struct DashboardView: View {
     @EnvironmentObject var workoutSession: WorkoutSession
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var authService: AuthenticationService
-    @EnvironmentObject var walletService: BitcoinWalletService
+    @EnvironmentObject var cashuService: CashuService
     
     @State private var selectedActivityType: ActivityType = .running
     @State private var showingWorkoutView = false
     @State private var showingWalletView = false
+    @State private var showingSettingsView = false
+    @State private var recentWorkouts: [HKWorkout] = []
     
     var body: some View {
         NavigationView {
@@ -45,29 +48,41 @@ struct DashboardView: View {
         .sheet(isPresented: $showingWalletView) {
             WalletView()
         }
+        .sheet(isPresented: $showingSettingsView) {
+            SettingsView()
+        }
+        .onAppear {
+            loadRecentWorkouts()
+        }
     }
     
     private var headerSection: some View {
         HStack {
+            // RUNSTR title on left
             Text("RUNSTR")
                 .font(.system(size: 28, weight: .bold, design: .default))
                 .foregroundColor(.white)
             
             Spacer()
             
-            // Bitcoin balance - tappable to open wallet
+            // Centered balance - larger and without Bitcoin symbol/sats text
             Button {
                 showingWalletView = true
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "bitcoinsign.circle.fill")
-                        .foregroundColor(.white)
-                        .font(.title3)
-                    
-                    Text(walletService.formatSats(walletService.balance))
-                        .font(.system(size: 16, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white)
-                }
+                Text("\(cashuService.balance)")
+                    .font(.system(size: 24, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            
+            Spacer()
+            
+            // Settings gear button on right
+            Button {
+                showingSettingsView = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.white)
             }
         }
         .padding(.horizontal, 20)
@@ -206,14 +221,21 @@ struct DashboardView: View {
             }
             
             VStack(spacing: 1) {
-                ForEach(0..<3) { index in
-                    WorkoutSummaryCard(
-                        activityType: .running,
-                        distance: 3.2,
-                        duration: 1800,
-                        satsEarned: 250,
-                        date: Date().addingTimeInterval(-Double(index) * 86400)
-                    )
+                if recentWorkouts.isEmpty {
+                    Text("No recent workouts")
+                        .font(.system(size: 16, weight: .medium, design: .default))
+                        .foregroundColor(.gray)
+                        .padding(.vertical, 40)
+                } else {
+                    ForEach(Array(recentWorkouts.prefix(3).enumerated()), id: \.offset) { index, workout in
+                        WorkoutSummaryCard(
+                            activityType: ActivityType.from(hkWorkout: workout),
+                            distance: (workout.totalDistance?.doubleValue(for: .meter()) ?? 0) / 1000, // Convert to km
+                            duration: workout.duration,
+                            satsEarned: calculateSatsEarned(distance: workout.totalDistance?.doubleValue(for: .meter()) ?? 0, duration: workout.duration),
+                            date: workout.startDate
+                        )
+                    }
                 }
             }
         }
@@ -229,6 +251,20 @@ struct DashboardView: View {
         } else {
             return String(format: "%d:%02d", minutes, seconds)
         }
+    }
+    
+    private func loadRecentWorkouts() {
+        healthKitService.fetchRecentWorkouts { workouts in
+            self.recentWorkouts = workouts
+        }
+    }
+    
+    private func calculateSatsEarned(distance: Double, duration: TimeInterval) -> Int {
+        // Basic calculation: 100 sats per km + time bonus
+        let distanceKm = distance / 1000
+        let baseSats = Int(distanceKm * 100)
+        let timeBonus = Int(duration / 60) // 1 sat per minute
+        return baseSats + timeBonus
     }
 }
 
@@ -289,10 +325,26 @@ struct WorkoutSummaryCard: View {
     }
 }
 
+extension ActivityType {
+    static func from(hkWorkout: HKWorkout) -> ActivityType {
+        switch hkWorkout.workoutActivityType {
+        case .running:
+            return .running
+        case .walking:
+            return .walking
+        case .cycling:
+            return .cycling
+        default:
+            return .running // Default fallback
+        }
+    }
+}
+
 #Preview {
     DashboardView()
         .environmentObject(WorkoutSession())
         .environmentObject(LocationService())
         .environmentObject(HealthKitService())
         .environmentObject(AuthenticationService())
+        .environmentObject(CashuService())
 }

@@ -3,55 +3,35 @@ import SwiftUI
 struct TeamSelectorView: View {
     @Binding var selectedTeam: TeamSelection?
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var nostrService: NostrService
     @State private var searchText = ""
     
-    // Mock teams for demonstration
-    private let mockTeams = [
-        TeamSelection(
-            teamID: "team1",
-            teamName: "Bitcoin Runners",
-            captainName: "Alice Cooper",
-            memberCount: 24,
-            activityLevel: .active
-        ),
-        TeamSelection(
-            teamID: "team2",
-            teamName: "Lightning Squad",
-            captainName: "Bob Smith",
-            memberCount: 15,
-            activityLevel: .competitive
-        ),
-        TeamSelection(
-            teamID: "team3",
-            teamName: "Casual Cruisers",
-            captainName: "Carol Johnson",
-            memberCount: 32,
-            activityLevel: .casual
-        ),
-        TeamSelection(
-            teamID: "team4",
-            teamName: "Nostr Nomads",
-            captainName: "Dave Wilson",
-            memberCount: 18,
-            activityLevel: .active
-        ),
-        TeamSelection(
-            teamID: "team5",
-            teamName: "Satoshi Sprinters",
-            captainName: "Eve Davis",
-            memberCount: 41,
-            activityLevel: .competitive
-        )
-    ]
-    
     private var filteredTeams: [TeamSelection] {
+        let teamSelections = nostrService.availableTeams.map { team in
+            TeamSelection(
+                teamID: team.id,
+                teamName: team.name,
+                captainName: "Captain", // We don't have captain names in the current Team model
+                memberCount: team.memberCount,
+                activityLevel: activityLevelToSelection(team.activityLevel)
+            )
+        }
+        
         if searchText.isEmpty {
-            return mockTeams
+            return teamSelections
         } else {
-            return mockTeams.filter { team in
-                team.teamName.localizedCaseInsensitiveContains(searchText) ||
-                team.captainName.localizedCaseInsensitiveContains(searchText)
+            return teamSelections.filter { team in
+                team.teamName.localizedCaseInsensitiveContains(searchText)
             }
+        }
+    }
+    
+    private func activityLevelToSelection(_ level: ActivityLevel) -> TeamSelection.ActivityLevel {
+        switch level {
+        case .beginner: return .casual
+        case .intermediate: return .active
+        case .advanced: return .competitive
+        case .competitive: return .competitive
         }
     }
     
@@ -84,6 +64,11 @@ struct TeamSelectorView: View {
                     }
                     .foregroundColor(.white)
                 }
+            }
+        }
+        .onAppear {
+            Task {
+                await nostrService.fetchAvailableTeams()
             }
         }
     }

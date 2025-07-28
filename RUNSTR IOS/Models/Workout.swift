@@ -2,7 +2,7 @@ import Foundation
 import CoreLocation
 import HealthKit
 
-struct Workout: Identifiable {
+struct Workout: Identifiable, Codable {
     let id: String
     let userID: String
     let activityType: ActivityType
@@ -64,6 +64,77 @@ struct Workout: Identifiable {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         } else {
             return String(format: "%d:%02d", minutes, seconds)
+        }
+    }
+    
+    // MARK: - Codable
+    private enum CodingKeys: String, CodingKey {
+        case id, userID, activityType, startTime, endTime, duration, distance, averagePace, calories
+        case averageHeartRate, maxHeartRate, elevationGain, weather, nostrEventID, rewardAmount
+        case isTeamChallenge, teamID, eventID, route
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        userID = try container.decode(String.self, forKey: .userID)
+        activityType = try container.decode(ActivityType.self, forKey: .activityType)
+        startTime = try container.decode(Date.self, forKey: .startTime)
+        endTime = try container.decode(Date.self, forKey: .endTime)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        distance = try container.decode(Double.self, forKey: .distance)
+        averagePace = try container.decode(Double.self, forKey: .averagePace)
+        calories = try container.decodeIfPresent(Double.self, forKey: .calories)
+        averageHeartRate = try container.decodeIfPresent(Double.self, forKey: .averageHeartRate)
+        maxHeartRate = try container.decodeIfPresent(Double.self, forKey: .maxHeartRate)
+        elevationGain = try container.decodeIfPresent(Double.self, forKey: .elevationGain)
+        weather = try container.decodeIfPresent(WeatherCondition.self, forKey: .weather)
+        nostrEventID = try container.decodeIfPresent(String.self, forKey: .nostrEventID)
+        rewardAmount = try container.decode(Int.self, forKey: .rewardAmount)
+        isTeamChallenge = try container.decode(Bool.self, forKey: .isTeamChallenge)
+        teamID = try container.decodeIfPresent(String.self, forKey: .teamID)
+        eventID = try container.decodeIfPresent(String.self, forKey: .eventID)
+        
+        // Decode route as array of coordinate dictionaries
+        if let routeData = try container.decodeIfPresent([[String: Double]].self, forKey: .route) {
+            route = routeData.compactMap { dict in
+                guard let lat = dict["latitude"], let lon = dict["longitude"] else { return nil }
+                return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+            }
+        } else {
+            route = nil
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(userID, forKey: .userID)
+        try container.encode(activityType, forKey: .activityType)
+        try container.encode(startTime, forKey: .startTime)
+        try container.encode(endTime, forKey: .endTime)
+        try container.encode(duration, forKey: .duration)
+        try container.encode(distance, forKey: .distance)
+        try container.encode(averagePace, forKey: .averagePace)
+        try container.encodeIfPresent(calories, forKey: .calories)
+        try container.encodeIfPresent(averageHeartRate, forKey: .averageHeartRate)
+        try container.encodeIfPresent(maxHeartRate, forKey: .maxHeartRate)
+        try container.encodeIfPresent(elevationGain, forKey: .elevationGain)
+        try container.encodeIfPresent(weather, forKey: .weather)
+        try container.encodeIfPresent(nostrEventID, forKey: .nostrEventID)
+        try container.encode(rewardAmount, forKey: .rewardAmount)
+        try container.encode(isTeamChallenge, forKey: .isTeamChallenge)
+        try container.encodeIfPresent(teamID, forKey: .teamID)
+        try container.encodeIfPresent(eventID, forKey: .eventID)
+        
+        // Encode route as array of coordinate dictionaries
+        if let route = route {
+            let routeData = route.map { coordinate in
+                ["latitude": coordinate.latitude, "longitude": coordinate.longitude]
+            }
+            try container.encode(routeData, forKey: .route)
+        } else {
+            try container.encodeNil(forKey: .route)
         }
     }
 }

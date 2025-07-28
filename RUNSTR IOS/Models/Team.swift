@@ -15,7 +15,15 @@ struct Team: Codable, Identifiable {
     var stats: TeamStats
     let nostrListID: String // NIP-51 list identifier
     
-    init(name: String, description: String, captainID: String, activityLevel: ActivityLevel, maxMembers: Int = 500) {
+    // NIP-101e Enhanced fields
+    let teamType: String // "running_club", "cycling_group", "mixed_fitness"
+    let location: String? // City, region for local team discovery
+    let supportedActivityTypes: [ActivityType] // Activities this team focuses on
+    var activeChallenges: [String] // Challenge IDs team is participating in
+    var teamEvents: [String] // Event IDs created by this team
+    let nostrEventID: String? // Kind 33404 event ID on Nostr
+    
+    init(name: String, description: String, captainID: String, activityLevel: ActivityLevel, maxMembers: Int = 500, teamType: String = "running_club", location: String? = nil, supportedActivityTypes: [ActivityType] = [.running, .walking]) {
         self.id = UUID().uuidString
         self.name = name
         self.description = description
@@ -27,6 +35,94 @@ struct Team: Codable, Identifiable {
         self.isPublic = true
         self.stats = TeamStats()
         self.nostrListID = "team_\(self.id)"
+        
+        // NIP-101e fields
+        self.teamType = teamType
+        self.location = location
+        self.supportedActivityTypes = supportedActivityTypes
+        self.activeChallenges = []
+        self.teamEvents = []
+        self.nostrEventID = nil
+    }
+    
+    /// Initialize Team from FitnessTeamEvent (Kind 33404)
+    init?(from fitnessTeamEvent: FitnessTeamEvent, activityLevel: ActivityLevel = .intermediate) {
+        self.id = fitnessTeamEvent.id
+        self.name = fitnessTeamEvent.name
+        self.description = fitnessTeamEvent.content
+        self.captainID = fitnessTeamEvent.captainPubkey
+        self.createdAt = fitnessTeamEvent.createdAt
+        self.memberIDs = fitnessTeamEvent.memberPubkeys
+        self.maxMembers = 500 // Default, could be derived from tags if specified
+        self.activityLevel = activityLevel
+        self.isPublic = fitnessTeamEvent.isPublic
+        self.stats = TeamStats()
+        self.nostrListID = "team_\(fitnessTeamEvent.id)"
+        
+        // NIP-101e enhanced fields
+        self.teamType = fitnessTeamEvent.teamType
+        self.location = fitnessTeamEvent.location
+        self.supportedActivityTypes = [.running, .walking] // Default, could be parsed from tags
+        self.activeChallenges = []
+        self.teamEvents = []
+        self.nostrEventID = fitnessTeamEvent.id
+        
+        self.imageURL = nil
+    }
+    
+    /// Convert Team to FitnessTeamEvent for Nostr publishing
+    func toFitnessTeamEvent() -> FitnessTeamEvent? {
+        let tags: [[String]] = [
+            ["d", id],
+            ["name", name],
+            ["type", teamType],
+            ["captain", captainID],
+            ["public", isPublic ? "true" : "false"],
+            ["t", "team"],
+            ["t", "fitness"]
+        ] + (location.map { [["location", $0]] } ?? []) +
+        memberIDs.map { ["member", $0] }
+        
+        return FitnessTeamEvent(
+            eventContent: description,
+            tags: tags,
+            createdAt: createdAt
+        )
+    }
+    
+    /// Check if team supports a specific activity type
+    func supportsActivity(_ activityType: ActivityType) -> Bool {
+        return supportedActivityTypes.contains(activityType) || teamType == "mixed_fitness"
+    }
+    
+    /// Add member to team (updates memberIDs array)
+    mutating func addMember(_ memberID: String) -> Bool {
+        guard !memberIDs.contains(memberID), memberIDs.count < maxMembers else {
+            return false
+        }
+        memberIDs.append(memberID)
+        return true
+    }
+    
+    /// Remove member from team
+    mutating func removeMember(_ memberID: String) -> Bool {
+        guard let index = memberIDs.firstIndex(of: memberID), memberID != captainID else {
+            return false
+        }
+        memberIDs.remove(at: index)
+        return true
+    }
+    
+    /// Join challenge as a team
+    mutating func joinChallenge(_ challengeID: String) {
+        if !activeChallenges.contains(challengeID) {
+            activeChallenges.append(challengeID)
+        }
+    }
+    
+    /// Leave challenge
+    mutating func leaveChallenge(_ challengeID: String) {
+        activeChallenges.removeAll { $0 == challengeID }
     }
 }
 
@@ -75,6 +171,15 @@ enum ActivityLevel: String, Codable, CaseIterable {
         case .intermediate: return 15.0...30.0
         case .advanced: return 30.0...50.0
         case .competitive: return 50.0...100.0
+        }
+    }
+    
+    var sortOrder: Int {
+        switch self {
+        case .beginner: return 0
+        case .intermediate: return 1
+        case .advanced: return 2
+        case .competitive: return 3
         }
     }
 }

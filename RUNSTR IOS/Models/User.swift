@@ -9,6 +9,8 @@ struct User: Codable, Identifiable {
     let runstrNostrPrivateKey: String // nsec - stored securely
     var mainNostrPublicKey: String? // User's existing npub (optional)
     var isDelegatedSigning: Bool = false // Has linked main npub
+    var additionalNostrPublicKeys: [String] = [] // Additional npubs for stats
+    var statsConfiguration: StatsConfiguration = StatsConfiguration()
     let subscriptionTier: SubscriptionTier
     let createdAt: Date
     var profile: UserProfile
@@ -50,6 +52,45 @@ struct User: Codable, Identifiable {
     var displayNostrPublicKey: String {
         return mainNostrPublicKey ?? runstrNostrPublicKey
     }
+    
+    // Get all npubs configured for this user
+    var allConfiguredNpubs: [String] {
+        var npubs: [String] = [runstrNostrPublicKey]
+        if let mainNpub = mainNostrPublicKey {
+            npubs.append(mainNpub)
+        }
+        npubs.append(contentsOf: additionalNostrPublicKeys)
+        return Array(Set(npubs)) // Remove duplicates
+    }
+    
+    // Add an additional npub for stats aggregation
+    mutating func addAdditionalNpub(_ npub: String) -> Bool {
+        guard !npub.isEmpty,
+              npub.hasPrefix("npub1"),
+              npub != runstrNostrPublicKey,
+              npub != mainNostrPublicKey,
+              !additionalNostrPublicKeys.contains(npub) else {
+            return false
+        }
+        
+        additionalNostrPublicKeys.append(npub)
+        return true
+    }
+    
+    // Remove an additional npub
+    mutating func removeAdditionalNpub(_ npub: String) {
+        additionalNostrPublicKeys.removeAll { $0 == npub }
+    }
+    
+    // Update stats configuration
+    mutating func updateStatsConfiguration(_ config: StatsConfiguration) {
+        self.statsConfiguration = config
+    }
+    
+    // Toggle delegation signing
+    mutating func setDelegationSigning(_ enabled: Bool) {
+        self.isDelegatedSigning = enabled
+    }
 }
 
 enum LoginMethod: String, Codable {
@@ -72,6 +113,7 @@ struct UserProfile: Codable {
     var profilePicture: String? = nil
     var banner: String? = nil
     var nip05: String? = nil
+    var activityLevel: ActivityLevel = .intermediate
     var fitnessGoals: FitnessGoals = FitnessGoals()
     var preferences: UserPreferences = UserPreferences()
     
@@ -84,6 +126,7 @@ struct UserProfile: Codable {
             self.banner = profile.banner
             self.nip05 = profile.nip05
         }
+        self.activityLevel = .intermediate
         self.fitnessGoals = FitnessGoals()
         self.preferences = UserPreferences()
     }
@@ -95,6 +138,7 @@ struct UserProfile: Codable {
         self.profilePicture = nil
         self.banner = nil
         self.nip05 = nil
+        self.activityLevel = .intermediate
         self.fitnessGoals = FitnessGoals()
         self.preferences = UserPreferences()
     }
@@ -117,23 +161,73 @@ struct UserStats: Codable {
     var totalWorkouts: Int = 0
     var currentStreak: Int = 0
     var longestStreak: Int = 0
-    var personalRecords: [ActivityType: PersonalRecord] = [:]
     var totalSatsEarned: Int = 0
+    var totalStreakSatsEarned: Int = 0
+    var weeklyStreaksCompleted: Int = 0
+    var lastWorkoutDate: Date = Date.distantPast
+    var lastUpdated: Date = Date()
+    
+    // MARK: - Streak Methods
+    
+    /// Update stats after a workout
+    mutating func recordWorkout(_ workout: Workout, streakReward: Int) {
+        totalDistance += workout.distance
+        totalWorkouts += 1
+        totalSatsEarned += workout.rewardAmount + streakReward
+        totalStreakSatsEarned += streakReward
+        lastWorkoutDate = workout.startTime
+        lastUpdated = Date()
+    }
+    
+    /// Update streak statistics
+    mutating func updateStreak(current: Int, longest: Int) {
+        currentStreak = current
+        longestStreak = max(longestStreak, longest)
+        lastUpdated = Date()
+    }
+    
+    /// Record completion of weekly streak challenge
+    mutating func recordWeeklyStreakCompletion(bonus: Int) {
+        weeklyStreaksCompleted += 1
+        totalSatsEarned += bonus
+        totalStreakSatsEarned += bonus
+        lastUpdated = Date()
+    }
+    
+    /// Check if user worked out today
+    func hasWorkedOutToday() -> Bool {
+        return Calendar.current.isDateInToday(lastWorkoutDate)
+    }
+    
+    /// Get days since last workout
+    func daysSinceLastWorkout() -> Int {
+        let days = Calendar.current.dateComponents([.day], from: lastWorkoutDate, to: Date()).day ?? 0
+        return max(0, days)
+    }
+    
+    /// Get formatted total distance
+    var formattedTotalDistance: String {
+        let km = totalDistance / 1000
+        return String(format: "%.1f km", km)
+    }
+    
+    /// Get average distance per workout
+    var averageDistancePerWorkout: Double {
+        guard totalWorkouts > 0 else { return 0.0 }
+        return totalDistance / Double(totalWorkouts)
+    }
+    
+    /// Get streak completion rate
+    var streakCompletionRate: Double {
+        guard totalWorkouts > 0 else { return 0.0 }
+        // Rough estimation based on weeks since starting
+        let daysSinceStart = Calendar.current.dateComponents([.day], from: lastUpdated.addingTimeInterval(-Double(totalWorkouts) * 86400), to: Date()).day ?? 1
+        let possibleWeeks = max(1, daysSinceStart / 7)
+        return Double(weeklyStreaksCompleted) / Double(possibleWeeks)
+    }
 }
 
-struct PersonalRecord: Codable {
-    let distance: Double
-    let time: Double // seconds
-    let pace: Double // minutes per km
-    let achievedAt: Date
-}
 
-
-enum PrivacyLevel: String, Codable {
-    case `private` = "private"
-    case team = "team"
-    case `public` = "public"
-}
 
 enum ActivityType: String, Codable, CaseIterable {
     case running = "running"

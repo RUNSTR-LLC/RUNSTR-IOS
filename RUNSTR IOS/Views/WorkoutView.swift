@@ -10,6 +10,7 @@ struct WorkoutView: View {
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var cashuService: CashuService
+    @EnvironmentObject var streakService: StreakService
     
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
@@ -220,7 +221,7 @@ struct WorkoutView: View {
                     print("Workout saved to HealthKit: \(success)")
                 }
                 
-                // 2. Award Cashu tokens for workout
+                // 2. Update streak and award Cashu tokens
                 await awardWorkoutReward(for: completedWorkout)
                 
                 // 3. Create Nostr event (if connected)
@@ -234,24 +235,66 @@ struct WorkoutView: View {
         }
     }
     
-    /// Award Cashu tokens based on workout performance
+    /// Award Cashu tokens based on workout performance and streak
     private func awardWorkoutReward(for workout: Workout) async {
-        // Calculate reward based on workout metrics
-        let rewardAmount = calculateWorkoutReward(workout)
+        guard let user = authService.currentUser else {
+            print("❌ No authenticated user for reward")
+            return
+        }
         
-        guard rewardAmount > 0 else {
+        // Calculate base workout reward
+        let workoutReward = calculateWorkoutReward(workout)
+        
+        // Update streak and get streak reward
+        streakService.recordWorkout(date: workout.startTime)
+        let streakReward = streakService.streakRewardEarned
+        
+        // Check for weekly completion bonus
+        let weeklyBonus = streakService.hasCompletedWeeklyChallenge() ? streakService.getWeeklyCompletionBonus() : 0
+        
+        let totalReward = workoutReward + streakReward + weeklyBonus
+        
+        guard totalReward > 0 else {
             print("❌ No reward calculated for workout")
             return
         }
         
         do {
-            // Create tokens directly in user's wallet
-            // In a real implementation, these would be minted from a funding source
-            let tokenString = try await cashuService.requestTokens(amount: rewardAmount)
+            // Mint Cashu tokens for workout reward
+            if workoutReward > 0 {
+                let workoutTokens = try await cashuService.requestTokens(amount: workoutReward)
+                print("✅ Minted \(workoutReward) sats for workout completion")
+            }
             
-            print("✅ Awarded \(rewardAmount) sats for \(workout.activityType.displayName) workout")
+            // Mint additional tokens for streak
+            if streakReward > 0 {
+                let streakTokens = try await cashuService.requestTokens(amount: streakReward)
+                print("🔥 Minted \(streakReward) sats for day \(streakService.currentStreak) streak!")
+            }
+            
+            // Mint weekly completion bonus
+            if weeklyBonus > 0 {
+                let bonusTokens = try await cashuService.requestTokens(amount: weeklyBonus)
+                print("🏆 Minted \(weeklyBonus) sats for completing weekly challenge!")
+            }
+            
+            // Update user stats
+            if var currentUser = authService.currentUser {
+                currentUser.stats.recordWorkout(workout, streakReward: streakReward + weeklyBonus)
+                currentUser.stats.updateStreak(current: streakService.currentStreak, longest: streakService.currentStreak)
+                
+                if weeklyBonus > 0 {
+                    currentUser.stats.recordWeeklyStreakCompletion(bonus: weeklyBonus)
+                }
+                
+                // Save updated user (this would normally go through AuthenticationService)
+                // authService.updateCurrentUser(currentUser)
+            }
+            
+            print("✅ Total reward: \(totalReward) sats (\(workoutReward) workout + \(streakReward) streak + \(weeklyBonus) bonus)")
             print("🏃‍♂️ Distance: \(String(format: "%.2f", workout.distance/1000))km")
             print("⏱️ Duration: \(formatTime(workout.duration))")
+            print("🔥 Streak: \(streakService.getStreakStatusMessage())")
             
         } catch {
             print("❌ Failed to award workout reward: \(error)")

@@ -1,0 +1,212 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Preparing to edit files in RUNSTR project...'"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command", 
+            "command": "echo 'Creating new file in RUNSTR project...'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit:.*\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/swift-review.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Models/.*Nostr.*\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/nostr-events.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Services/NostrService\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt", 
+            "prompt_file": ".claude/hooks/nostr-events.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Services/HealthKitService\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/performance-check.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Services/LocationService\\.swift$", 
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/performance-check.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Views/WorkoutView\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/performance-check.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Services/BitcoinWalletService\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/security-audit.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Services/CashuService\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/security-audit.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Models/CashuWallet\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/security-audit.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit:.*/Models/CashuModels\\.swift$",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/security-audit.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Write:.*crash.*",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/bug-triage.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Write:.*error.*",
+        "hooks": [
+          {
+            "type": "claude_prompt", 
+            "prompt_file": ".claude/hooks/bug-triage.md"
+          }
+        ]
+      },
+      {
+        "matcher": "Write:.*bug.*",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/bug-triage.md"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*crash.*|.*error.*|.*bug.*|.*issue.*",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/bug-triage.md"
+          }
+        ]
+      },
+      {
+        "matcher": ".*performance.*|.*slow.*|.*battery.*|.*memory.*",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/performance-check.md"
+          }
+        ]
+      },
+      {
+        "matcher": ".*security.*|.*bitcoin.*|.*lightning.*|.*cashu.*|.*private.*key.*",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/security-audit.md"
+          }
+        ]
+      },
+      {
+        "matcher": ".*nostr.*|.*event.*|.*relay.*|.*nip.*",
+        "hooks": [
+          {
+            "type": "claude_prompt",
+            "prompt_file": ".claude/hooks/nostr-events.md"
+          }
+        ]
+      }
+    ]
+  },
+  "project_info": {
+    "name": "RUNSTR iOS",
+    "type": "Bitcoin-native fitness app",
+    "technologies": ["SwiftUI", "HealthKit", "Nostr", "Lightning", "Cashu"],
+    "focus_areas": [
+      "Activity tracking with GPS optimization",
+      "Bitcoin reward system via Cashu ecash",
+      "Decentralized data storage using Nostr",
+      "Team management and social features",
+      "Apple Watch integration",
+      "Background processing efficiency"
+    ]
+  },
+  "custom_commands": {
+    "review_bitcoin": {
+      "description": "Comprehensive security review of Bitcoin/Lightning integration",
+      "prompt": "Perform a comprehensive security audit focusing on Bitcoin/Lightning integration, private key management, and transaction security. Use the security-audit.md hook template for analysis."
+    },
+    "review_nostr": {
+      "description": "Validate Nostr protocol implementation and event schemas",
+      "prompt": "Analyze the Nostr protocol implementation, focusing on event schemas, NIP compliance, relay communication, and data integrity. Use the nostr-events.md hook template for validation."
+    },
+    "review_performance": {
+      "description": "Analyze performance optimization opportunities",
+      "prompt": "Review the code for performance optimization opportunities, focusing on GPS accuracy vs battery drain, memory usage during long workouts, and background processing efficiency. Use the performance-check.md hook template for analysis."
+    },
+    "triage_issue": {
+      "description": "Automatically triage and categorize reported issues",
+      "prompt": "Analyze this issue report and provide structured triage including component classification, severity assessment, impact analysis, and recommended actions. Use the bug-triage.md hook template for analysis."
+    }
+  }
+}

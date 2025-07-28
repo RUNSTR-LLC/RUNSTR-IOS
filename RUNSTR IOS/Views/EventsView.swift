@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EventsView: View {
     @State private var selectedTab: EventTab = .discover
+    @EnvironmentObject var nostrService: NostrService
     
     var body: some View {
         NavigationView {
@@ -32,9 +33,11 @@ struct EventsView: View {
                 // Content
                 TabView(selection: $selectedTab) {
                     EventDiscoveryView()
+                        .environmentObject(nostrService)
                         .tag(EventTab.discover)
                     
                     MyEventsView()
+                        .environmentObject(nostrService)
                         .tag(EventTab.myEvents)
                 }
                 .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
@@ -43,6 +46,11 @@ struct EventsView: View {
             .navigationBarTitleDisplayMode(.large)
             .background(Color.black)
             .foregroundColor(.white)
+        }
+        .onAppear {
+            Task {
+                await nostrService.fetchAvailableEvents()
+            }
         }
     }
 }
@@ -61,7 +69,8 @@ enum EventTab: String, CaseIterable {
 
 struct EventDiscoveryView: View {
     @State private var searchText = ""
-    @State private var selectedDifficulty: EventDifficulty? = nil
+    @State private var selectedDifficulty: EventDifficulty?
+    @EnvironmentObject var nostrService: NostrService
     
     var body: some View {
         VStack(spacing: 0) {
@@ -106,34 +115,69 @@ struct EventDiscoveryView: View {
             // Events list
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    ForEach(mockEvents) { event in
-                        EventCard(event: event)
+                    if nostrService.isLoadingEvents {
+                        ProgressView("Loading events...")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.top, 50)
+                    } else if filteredEvents.isEmpty {
+                        Text("No events available")
+                            .foregroundColor(.gray)
+                            .padding(.top, 50)
+                    } else {
+                        ForEach(filteredEvents) { event in
+                            EventCard(event: event)
+                        }
                     }
                 }
                 .padding()
             }
         }
     }
+    
+    private var filteredEvents: [Event] {
+        nostrService.availableEvents.filter { event in
+            (searchText.isEmpty || event.name.localizedCaseInsensitiveContains(searchText)) &&
+            (selectedDifficulty == nil || event.difficulty == selectedDifficulty)
+        }
+    }
 }
 
 struct MyEventsView: View {
+    @EnvironmentObject var nostrService: NostrService
+    
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                ForEach(mockEvents.prefix(2)) { event in
-                    EventCard(event: event, showProgress: true)
+                if nostrService.isLoadingEvents {
+                    ProgressView("Loading your events...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.top, 50)
+                } else if myEvents.isEmpty {
+                    Text("You haven't joined any events yet")
+                        .foregroundColor(.gray)
+                        .padding(.top, 50)
+                } else {
+                    ForEach(myEvents) { event in
+                        EventCard(event: event, showProgress: true)
+                    }
                 }
             }
             .padding()
         }
     }
+    
+    private var myEvents: [Event] {
+        // For now, show first 2 events as user's events
+        // In production, filter by events user has joined
+        return Array(nostrService.availableEvents.prefix(2))
+    }
 }
 
 struct EventCard: View {
-    let event: MockEvent
+    let event: Event
     let showProgress: Bool
     
-    init(event: MockEvent, showProgress: Bool = false) {
+    init(event: Event, showProgress: Bool = false) {
         self.event = event
         self.showProgress = showProgress
     }
@@ -209,12 +253,12 @@ struct EventCard: View {
                         
                         Spacer()
                         
-                        Text("\(Int(event.currentProgress))/\(Int(event.targetValue)) \(event.goalType.unit)")
+                        Text("0/\(Int(event.targetValue)) \(event.goalType.unit)")
                             .font(.caption)
                             .foregroundColor(.gray)
                     }
                     
-                    ProgressView(value: event.currentProgress, total: event.targetValue)
+                    ProgressView(value: 0.0, total: event.targetValue)
                         .tint(.orange)
                 }
             }
@@ -225,7 +269,7 @@ struct EventCard: View {
                     Image(systemName: "person.2")
                         .font(.caption)
                         .foregroundColor(.gray)
-                    Text("\(event.participantCount) joined")
+                    Text("\(event.participants.count) joined")
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
@@ -250,54 +294,6 @@ struct EventCard: View {
     }
 }
 
-struct MockEvent: Identifiable {
-    let id = UUID()
-    let name: String
-    let description: String
-    let goalType: EventGoalType
-    let targetValue: Double
-    let difficulty: EventDifficulty
-    let prizePool: Int
-    let participantCount: Int
-    let daysRemaining: Int
-    let currentProgress: Double
-}
-
-let mockEvents = [
-    MockEvent(
-        name: "30-Day Distance Challenge",
-        description: "Run or walk 100km in 30 days",
-        goalType: .totalDistance,
-        targetValue: 100,
-        difficulty: .intermediate,
-        prizePool: 100000,
-        participantCount: 234,
-        daysRemaining: 18,
-        currentProgress: 45.2
-    ),
-    MockEvent(
-        name: "Weekly Streak Master",
-        description: "Complete workouts 7 days in a row",
-        goalType: .streakDays,
-        targetValue: 7,
-        difficulty: .beginner,
-        prizePool: 25000,
-        participantCount: 892,
-        daysRemaining: 5,
-        currentProgress: 4
-    ),
-    MockEvent(
-        name: "Sub-20 5K Challenge",
-        description: "Run 5K under 20 minutes",
-        goalType: .fastestTime,
-        targetValue: 20,
-        difficulty: .advanced,
-        prizePool: 500000,
-        participantCount: 67,
-        daysRemaining: 12,
-        currentProgress: 22.3
-    )
-]
 
 #Preview {
     EventsView()

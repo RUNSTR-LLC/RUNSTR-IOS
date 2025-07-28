@@ -2,18 +2,11 @@ import Foundation
 import StoreKit
 import Combine
 
-// MARK: - Mock Product Protocol for Development
-protocol MockProductProtocol {
-    var id: String { get }
-    var displayName: String { get }
-    var displayPrice: String { get }
-    var price: Double { get }
-}
 
 @MainActor
 class SubscriptionService: ObservableObject {
-    @Published var availableProducts: [MockProductProtocol] = []
-    @Published var purchasedSubscriptions: [MockProductProtocol] = []
+    @Published var availableProducts: [Product] = []
+    @Published var purchasedSubscriptions: [Product] = []
     @Published var subscriptionStatus: SubscriptionStatus?
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -44,9 +37,10 @@ class SubscriptionService: ObservableObject {
                 SubscriptionTier.organization.productID
             ]
             
-            // Mock products for development - replace with real StoreKit in production
-            availableProducts = createMockProducts()
-            print("✅ Loaded \(availableProducts.count) subscription products")
+            // Load real StoreKit products in production
+            let storeKitProducts = try await Product.products(for: productIDs)
+            availableProducts = storeKitProducts
+            print("✅ Loaded \(availableProducts.count) real subscription products from App Store")
             
         } catch {
             errorMessage = "Failed to load subscription products: \(error.localizedDescription)"
@@ -57,20 +51,34 @@ class SubscriptionService: ObservableObject {
     }
     
     // MARK: - Purchase Handling
-    func purchase(_ product: MockProductProtocol, paymentMethod: PaymentMethod = .applePay) async -> Bool {
+    func purchase(_ product: Product, paymentMethod: PaymentMethod = .applePay) async -> Bool {
         do {
             isLoading = true
             errorMessage = nil
             
-            // Mock purchase for development
-            let mockPurchase = await mockPurchaseFlow(product: product, paymentMethod: paymentMethod)
+            // Real StoreKit purchase flow
+            let result = try await product.purchase()
             
-            if mockPurchase {
-                await updateSubscriptionStatus()
-                print("✅ Successfully purchased: \(product.displayName)")
-                return true
-            } else {
-                errorMessage = "Purchase was cancelled or failed"
+            switch result {
+            case .success(let verification):
+                switch verification {
+                case .verified(let transaction):
+                    await transaction.finish()
+                    await updateSubscriptionStatus()
+                    print("✅ Successfully purchased: \(product.displayName)")
+                    return true
+                case .unverified:
+                    errorMessage = "Purchase verification failed"
+                    return false
+                }
+            case .userCancelled:
+                errorMessage = "Purchase was cancelled"
+                return false
+            case .pending:
+                errorMessage = "Purchase is pending approval"
+                return false
+            @unknown default:
+                errorMessage = "Unknown purchase result"
                 return false
             }
             
@@ -114,23 +122,30 @@ class SubscriptionService: ObservableObject {
     func restorePurchases() async {
         isLoading = true
         
-        // Mock restore for development
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        
-        // Check for existing subscription in UserDefaults (mock)
-        if let savedTier = UserDefaults.standard.string(forKey: "subscription_tier"),
-           let tier = SubscriptionTier(rawValue: savedTier) {
-            
-            let status = SubscriptionStatus(
-                tier: tier,
-                isActive: true,
-                expirationDate: Calendar.current.date(byAdding: .month, value: 1, to: Date()),
-                autoRenew: true,
-                paymentMethod: .applePay,
-                purchaseDate: Date().addingTimeInterval(-86400 * 15) // 15 days ago
-            )
-            
-            subscriptionStatus = status
+        // Real StoreKit restore functionality
+        do {
+            for await result in Transaction.currentEntitlements {
+                switch result {
+                case .verified(let transaction):
+                    if let tier = SubscriptionTier.allCases.first(where: { $0.productID == transaction.productID }) {
+                        let status = SubscriptionStatus(
+                            tier: tier,
+                            isActive: true,
+                            expirationDate: transaction.expirationDate,
+                            autoRenew: transaction.isUpgraded == false,
+                            paymentMethod: .applePay,
+                            purchaseDate: transaction.purchaseDate
+                        )
+                        subscriptionStatus = status
+                        break // Only need the first valid subscription
+                    }
+                case .unverified:
+                    continue // Skip unverified transactions
+                }
+            }
+        } catch {
+            errorMessage = "Failed to restore purchases: \(error.localizedDescription)"
+            print("❌ Failed to restore purchases: \(error)")
         }
         
         isLoading = false
@@ -199,51 +214,6 @@ class SubscriptionService: ObservableObject {
             }
         }
     }
-    
-    // MARK: - Mock Implementations (Remove in Production)
-    private func createMockProducts() -> [MockProductProtocol] {
-        return [
-            MockProduct(
-                id: SubscriptionTier.member.productID,
-                displayName: SubscriptionTier.member.displayName,
-                price: SubscriptionTier.member.monthlyPrice
-            ),
-            MockProduct(
-                id: SubscriptionTier.captain.productID,
-                displayName: SubscriptionTier.captain.displayName,
-                price: SubscriptionTier.captain.monthlyPrice
-            ),
-            MockProduct(
-                id: SubscriptionTier.organization.productID,
-                displayName: SubscriptionTier.organization.displayName,
-                price: SubscriptionTier.organization.monthlyPrice
-            )
-        ]
-    }
-    
-    private func mockPurchaseFlow(product: MockProductProtocol, paymentMethod: PaymentMethod) async -> Bool {
-        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 second delay
-        
-        let success = true // Always succeed in mock
-        
-        if success {
-            // Save to UserDefaults for persistence
-            if let tier = SubscriptionTier.allCases.first(where: { $0.productID == product.id }) {
-                UserDefaults.standard.set(tier.rawValue, forKey: "subscription_tier")
-            }
-        }
-        
-        return success
-    }
-}
-
-// MARK: - Mock Product (Remove in Production)
-struct MockProduct: MockProductProtocol {
-    let id: String
-    let displayName: String
-    let price: Double
-    
-    var displayPrice: String { String(format: "$%.2f", price) }
 }
 
 // MARK: - Helper Extensions

@@ -14,9 +14,9 @@ struct RUNSTR_IOSApp: App {
     @StateObject private var locationService = LocationService()
     @StateObject private var workoutSession = WorkoutSession()
     @StateObject private var subscriptionService = SubscriptionService()
-    @StateObject private var walletService = BitcoinWalletService()
     @StateObject private var nostrService = NostrService()
     @StateObject private var cashuService = CashuService()
+    @StateObject private var streakService = StreakService()
     
     init() {
         // Configuration will be done in onAppear
@@ -30,9 +30,9 @@ struct RUNSTR_IOSApp: App {
                 .environmentObject(locationService)
                 .environmentObject(workoutSession)
                 .environmentObject(subscriptionService)
-                .environmentObject(walletService)
                 .environmentObject(nostrService)
                 .environmentObject(cashuService)
+                .environmentObject(streakService)
                 .preferredColorScheme(.dark)
                 .task {
                     // Configure workout session with services first

@@ -2,6 +2,11 @@ import SwiftUI
 import Charts
 
 struct StatsView: View {
+    @EnvironmentObject var healthKitService: HealthKitService
+    @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var authService: AuthenticationService
+    
+    @State private var statsService: StatsService?
     @State private var selectedTimeframe: TimeFrame = .week
     @State private var selectedMetric: StatsMetric = .distance
     
@@ -30,6 +35,29 @@ struct StatsView: View {
             .navigationBarTitleDisplayMode(.large)
             .background(Color.black)
             .foregroundColor(.white)
+            .onAppear {
+                if statsService == nil {
+                    statsService = StatsService(
+                        healthKitService: healthKitService,
+                        nostrService: nostrService,
+                        authService: authService
+                    )
+                }
+                Task {
+                    await statsService?.fetchAllStats(for: selectedTimeframe)
+                }
+            }
+            .onChange(of: selectedTimeframe) { newTimeframe in
+                Task {
+                    await statsService?.fetchAllStats(for: newTimeframe)
+                    await statsService?.generateChartData(for: selectedMetric, timeframe: newTimeframe)
+                }
+            }
+            .onChange(of: selectedMetric) { newMetric in
+                Task {
+                    await statsService?.generateChartData(for: newMetric, timeframe: selectedTimeframe)
+                }
+            }
         }
     }
     
@@ -80,21 +108,78 @@ struct StatsView: View {
                 }
             }
             
-            // Mock chart - in real implementation, use Swift Charts
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.gray.opacity(0.1))
-                    .frame(height: 200)
-                
-                VStack {
-                    Text("📈")
-                        .font(.system(size: 40))
-                    Text("Chart showing \(selectedMetric.displayName.lowercased())")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    Text("over the past \(selectedTimeframe.displayName.lowercased())")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+            // Real chart using Swift Charts
+            if let chartData = statsService?.chartData[selectedMetric], !chartData.isEmpty {
+                Chart(chartData) { dataPoint in
+                    LineMark(
+                        x: .value("Date", dataPoint.date),
+                        y: .value(selectedMetric.displayName, dataPoint.value)
+                    )
+                    .foregroundStyle(.orange)
+                    .interpolationMethod(.catmullRom)
+                    
+                    AreaMark(
+                        x: .value("Date", dataPoint.date),
+                        y: .value(selectedMetric.displayName, dataPoint.value)
+                    )
+                    .foregroundStyle(.orange.opacity(0.3))
+                    .interpolationMethod(.catmullRom)
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading) { value in
+                        AxisGridLine()
+                        AxisValueLabel() {
+                            if let doubleValue = value.as(Double.self) {
+                                Text(formatChartValue(doubleValue, metric: selectedMetric))
+                                    .foregroundColor(.gray)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks { value in
+                        AxisGridLine()
+                        AxisValueLabel() {
+                            if let dateValue = value.as(Date.self) {
+                                Text(formatChartDate(dateValue, timeframe: selectedTimeframe))
+                                    .foregroundColor(.gray)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+                .frame(height: 200)
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.gray.opacity(0.1))
+                )
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(height: 200)
+                    
+                    if statsService?.isLoading == true {
+                        VStack {
+                            ProgressView()
+                            Text("Loading chart data...")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                    } else {
+                        VStack {
+                            Text("📊")
+                                .font(.system(size: 40))
+                            Text("No data available")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            Text("Complete workouts to see your progress")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
                 }
             }
         }
@@ -106,42 +191,58 @@ struct StatsView: View {
                 .font(.headline)
                 .fontWeight(.bold)
             
-            VStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    SummaryCard(
-                        title: "Total Distance",
-                        value: "47.3 km",
-                        change: "+12%",
-                        isPositive: true,
-                        icon: "figure.run"
-                    )
-                    
-                    SummaryCard(
-                        title: "Workouts",
-                        value: "8",
-                        change: "+2",
-                        isPositive: true,
-                        icon: "timer"
-                    )
+            if statsService?.isLoading == true {
+                HStack {
+                    ProgressView()
+                    Text("Loading stats...")
+                        .foregroundColor(.gray)
                 }
-                
-                HStack(spacing: 12) {
-                    SummaryCard(
-                        title: "Avg Pace",
-                        value: "5:42 /km",
-                        change: "-0:15",
-                        isPositive: true,
-                        icon: "speedometer"
-                    )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else if let stats = statsService?.aggregatedStats,
+                      let timeframeStats = stats.healthKitStats.timeframeData[selectedTimeframe] {
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        SummaryCard(
+                            title: "Total Distance",
+                            value: String(format: "%.1f km", timeframeStats.distance / 1000),
+                            change: String(format: "%+.1f%%", timeframeStats.improvement),
+                            isPositive: timeframeStats.improvement >= 0,
+                            icon: "figure.run"
+                        )
+                        
+                        SummaryCard(
+                            title: "Workouts",
+                            value: "\(timeframeStats.workouts)",
+                            change: timeframeStats.workouts > 0 ? "+\(timeframeStats.workouts)" : "0",
+                            isPositive: timeframeStats.workouts > 0,
+                            icon: "timer"
+                        )
+                    }
                     
-                    SummaryCard(
-                        title: "Sats Earned",
-                        value: "2,450",
-                        change: "+18%",
-                        isPositive: true,
-                        icon: "bitcoinsign.circle"
-                    )
+                    HStack(spacing: 12) {
+                        SummaryCard(
+                            title: "Avg Pace",
+                            value: timeframeStats.averagePace > 0 ? formatPace(timeframeStats.averagePace) : "--",
+                            change: timeframeStats.averagePace > 0 ? "Good" : "--",
+                            isPositive: timeframeStats.averagePace > 0,
+                            icon: "speedometer"
+                        )
+                        
+                        SummaryCard(
+                            title: "Sats Earned",
+                            value: "\(timeframeStats.satsEarned)",
+                            change: timeframeStats.satsEarned > 0 ? "+\(timeframeStats.satsEarned)" : "0",
+                            isPositive: timeframeStats.satsEarned > 0,
+                            icon: "bitcoinsign.circle"
+                        )
+                    }
                 }
+            } else {
+                Text("No data available for this timeframe")
+                    .foregroundColor(.gray)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
             }
         }
     }
@@ -152,27 +253,40 @@ struct StatsView: View {
                 .font(.headline)
                 .fontWeight(.bold)
             
-            VStack(spacing: 12) {
-                PersonalRecordRow(
-                    activity: "5K Run",
-                    time: "19:42",
-                    date: "2 days ago",
-                    isNewRecord: true
-                )
-                
-                PersonalRecordRow(
-                    activity: "10K Run",
-                    time: "42:15",
-                    date: "1 week ago",
-                    isNewRecord: false
-                )
-                
-                PersonalRecordRow(
-                    activity: "Longest Run",
-                    time: "1:23:45 (15.2 km)",
-                    date: "3 weeks ago",
-                    isNewRecord: false
-                )
+            if statsService?.personalRecords.isEmpty != false {
+                if statsService?.isLoading == true {
+                    ProgressView("Loading records...")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "trophy")
+                            .font(.system(size: 40))
+                            .foregroundColor(.gray)
+                        Text("No personal records yet")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        Text("Complete more workouts to see your records")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+                }
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(Array(statsService?.personalRecords.keys ?? Dictionary<ActivityType, [PersonalRecord]>().keys), id: \.self) { activityType in
+                        if let records = statsService?.personalRecords[activityType],
+                           let bestRecord = records.first {
+                            PersonalRecordRow(
+                                activity: "\(activityType.displayName) - \(bestRecord.recordType.displayName)",
+                                time: bestRecord.formattedValue,
+                                date: formatRelativeDate(bestRecord.achievedDate),
+                                isNewRecord: bestRecord.isNewRecord
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -187,23 +301,76 @@ struct StatsView: View {
                     .fontWeight(.bold)
             }
             
-            VStack(alignment: .leading, spacing: 12) {
-                InsightCard(
-                    insight: "🎯 You're 85% likely to hit your monthly distance goal at your current pace!",
-                    type: .positive
-                )
-                
-                InsightCard(
-                    insight: "⚡ Your Tuesday morning runs are 12% faster than average. Consider scheduling important workouts then.",
-                    type: .tip
-                )
-                
-                InsightCard(
-                    insight: "🛡️ You've increased weekly distance by 20% - consider a recovery week to prevent injury.",
-                    type: .warning
-                )
+            if statsService?.aiInsights.isEmpty != false {
+                VStack(spacing: 8) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray)
+                    Text("No insights available")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Text("Complete more workouts to get personalized insights")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(statsService?.aiInsights ?? []) { insight in
+                        InsightCard(
+                            insight: insight.message,
+                            type: mapInsightType(insight.type)
+                        )
+                    }
+                }
             }
         }
+    }
+    
+    // Helper functions
+    private func formatPace(_ pace: Double) -> String {
+        let minutes = Int(pace)
+        let seconds = Int((pace - Double(minutes)) * 60)
+        return String(format: "%d:%02d /km", minutes, seconds)
+    }
+    
+    private func formatRelativeDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+    
+    private func mapInsightType(_ type: InsightType) -> InsightType {
+        // Map from StatsModels.InsightType to local InsightType
+        return type
+    }
+    
+    private func formatChartValue(_ value: Double, metric: StatsMetric) -> String {
+        switch metric {
+        case .distance:
+            return String(format: "%.1f km", value)
+        case .pace:
+            return formatPace(value)
+        case .frequency:
+            return String(format: "%.0f", value)
+        case .calories:
+            return String(format: "%.0f cal", value)
+        }
+    }
+    
+    private func formatChartDate(_ date: Date, timeframe: TimeFrame) -> String {
+        let formatter = DateFormatter()
+        switch timeframe {
+        case .week:
+            formatter.dateFormat = "E" // Mon, Tue, etc.
+        case .month:
+            formatter.dateFormat = "d" // 1, 2, 3, etc.
+        case .year:
+            formatter.dateFormat = "MMM" // Jan, Feb, etc.
+        }
+        return formatter.string(from: date)
     }
 }
 
@@ -312,7 +479,7 @@ struct InsightCard: View {
     }
 }
 
-enum TimeFrame: String, CaseIterable {
+enum TimeFrame: String, CaseIterable, Codable {
     case week = "week"
     case month = "month"
     case year = "year"
@@ -322,7 +489,7 @@ enum TimeFrame: String, CaseIterable {
     }
 }
 
-enum StatsMetric: String, CaseIterable {
+enum StatsMetric: String, CaseIterable, Codable {
     case distance = "distance"
     case pace = "pace"
     case frequency = "frequency"
@@ -338,7 +505,7 @@ enum StatsMetric: String, CaseIterable {
     }
 }
 
-enum InsightType {
+enum InsightType: Codable {
     case positive
     case tip
     case warning
@@ -354,4 +521,7 @@ enum InsightType {
 
 #Preview {
     StatsView()
+    .environmentObject(HealthKitService())
+    .environmentObject(NostrService())
+    .environmentObject(AuthenticationService())
 }

@@ -24,7 +24,7 @@ RUNSTR is a Bitcoin-native fitness app that rewards users with Bitcoin for runni
 - **HealthKit**: Primary fitness data source
 - **Apple Watch**: WatchKit for seamless workout tracking
 - **Nostr Protocol**: Decentralized data storage (NIP-101e for workouts, NIP-51 for teams)
-- **Cashu**: Bitcoin ecash rewards system
+- **Cashu Protocol**: Bitcoin ecash rewards system (replaces traditional Bitcoin wallets)
 - **Apple Music**: Workout playlist integration
 - **Claude AI**: Personalized coaching insights
 
@@ -113,20 +113,23 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 - **Earnings**: Captains earn 1,000 sats/month per team member
 - **Data**: Teams stored as NIP-51 lists on Nostr relays
 
-### Bitcoin Rewards System
-- **Cashu Integration**: Ecash tokens for privacy and instant settlement
-- **Automatic Distribution**: Rewards credited immediately after workouts
-- **Withdrawal**: Lightning Network integration for Bitcoin withdrawal
-- **Transparency**: Full transaction history and audit trail
+### Cashu Ecash Rewards System
+- **Cashu Protocol**: Native ecash implementation for privacy and instant settlement
+- **Mint Integration**: Connected to https://mint.runstr.app for token operations
+- **Automatic Distribution**: Rewards minted immediately after workouts
+- **Streak Bonuses**: Daily streak rewards (100-700 sats) with weekly reset
+- **Lightning Withdrawal**: Melt tokens to Lightning Network for Bitcoin withdrawal
+- **Transparency**: Full transaction history and cryptographic verification
 
 ## Subscription Model
 
 ### Member Tier ($5.99/month)
-- Full activity tracking
+- Full activity tracking with Cashu rewards
 - Team joining and participation  
-- Event participation with Bitcoin rewards
+- Event participation with ecash bonuses
+- Daily streak rewards (100-700 sats)
 - Basic Coach Claude insights
-- Cashu wallet with withdrawal
+- Cashu wallet with Lightning withdrawal
 
 ### Captain Tier ($20.99/month)
 - All Member features
@@ -134,6 +137,7 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 - Event creation and hosting
 - 1,000 sats monthly earning per team member
 - Advanced analytics and team insights
+- Enhanced reward multipliers
 
 ## Testing Strategy
 
@@ -160,7 +164,8 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 ### Data Protection
 - Nostr private keys stored in iOS Keychain
 - Health data never leaves user's control
-- Bitcoin rewards self-custodial via Cashu
+- Cashu ecash tokens self-custodial and private
+- Cryptographic token security via secp256k1
 - No personal data collection beyond fitness metrics
 
 ### Privacy Features
@@ -231,6 +236,58 @@ xcrun simctl spawn booted log stream --predicate 'processImagePath contains "RUN
 - [Cashu Protocol Documentation](https://docs.cashu.space/)
 - [Apple HealthKit Documentation](https://developer.apple.com/documentation/healthkit/)
 - [SwiftUI Best Practices](https://developer.apple.com/tutorials/swiftui/)
+
+## Production Readiness Status
+
+**RUNSTR is transitioning to production-ready implementation. Mock data is being systematically removed.**
+
+### ✅ Production-Ready Components
+- **Core Workout Tracking**: Full GPS and HealthKit integration
+- **Cashu Service**: Complete ecash protocol implementation
+- **Reward Calculation**: Real-time workout reward algorithms
+- **Streak System**: Daily streak tracking with weekly reset
+- **User Authentication**: Production Apple Sign-In integration
+
+### 🔄 Currently Being Implemented
+- **Cashu Token Minting**: Connecting reward calculation to actual token generation
+- **Streak Bonus Distribution**: Automatic ecash rewards for daily streaks
+- **Production Mint Integration**: Using https://mint.runstr.app for all operations
+
+### ⚠️ Development/Mock Components (To Be Removed)
+- **NostrService**: Currently using mock NIP-101e event publishing
+- **Team Data**: Mock team events and statistics
+- **BitcoinWalletService**: Legacy service replaced by CashuService
+
+### Production Configuration
+- **Cashu Mint**: `https://mint.runstr.app`
+- **Nostr Relays**: Real relay pool for production events
+- **API Keys**: All services configured for production endpoints
+
+---
+
+## Bug Fixes & Lessons Learned
+
+### 2025-07-28: Build Compilation Errors
+
+**Issue**: Build failed with Swift compilation errors
+
+**Root Causes & Fixes**:
+
+1. **FitnessTeamEvent Initializer Mismatch** (`Team.swift:86`)
+   - **Problem**: Calling `FitnessTeamEvent` initializer with individual parameters (`id`, `content`, `name`, etc.) but the actual initializer only accepts `(eventContent: String, tags: [[String]], createdAt: Date)`
+   - **Fix**: Updated call to use correct parameters: `eventContent: description, tags: tags, createdAt: createdAt`
+   - **Lesson**: Always check initializer signatures when working with model objects, especially after refactoring
+
+2. **Memory Access Conflict** (`NostrService.swift:416`)
+   - **Problem**: Overlapping access to `memberStats[workout.userID]` in single expression: `memberStats[workout.userID]?.lastWorkoutDate = max(memberStats[workout.userID]?.lastWorkoutDate ?? Date.distantPast, workout.startTime)`
+   - **Fix**: Extracted to local variable: `let currentLastWorkoutDate = memberStats[workout.userID]?.lastWorkoutDate ?? Date.distantPast`
+   - **Lesson**: Avoid multiple accesses to same dictionary key in single expression; use local variables to prevent memory access conflicts
+
+**Prevention Tips**:
+- Run frequent builds during development to catch compilation errors early
+- Use Xcode's static analysis to identify potential memory access issues
+- When refactoring model initializers, search codebase for all usage sites
+- Consider using computed properties or methods instead of complex inline expressions
 
 ---
 

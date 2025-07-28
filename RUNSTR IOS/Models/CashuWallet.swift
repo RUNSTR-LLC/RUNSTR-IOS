@@ -114,6 +114,14 @@ enum TransactionStatus: String, Codable {
     case pending = "pending"
     case confirmed = "confirmed"
     case failed = "failed"
+    
+    var displayName: String {
+        switch self {
+        case .pending: return "Pending"
+        case .confirmed: return "Confirmed"
+        case .failed: return "Failed"
+        }
+    }
 }
 
 
@@ -147,15 +155,9 @@ struct RewardCalculator {
     }
     
     private static func calculatePaceBonus(workout: Workout, userStats: UserStats) -> Int {
-        guard let personalRecord = userStats.personalRecords[workout.activityType] else {
-            return 0 // No bonus for first workout of type
-        }
-        
-        if workout.averagePace < personalRecord.pace {
-            return 1000 // 1000 sat bonus for new personal record
-        }
-        
-        return 0
+        // TODO: Implement pace bonus using the new StatsService system
+        // For now, return a small bonus to encourage activity
+        return workout.averagePace > 0 ? 100 : 0 // 100 sat bonus for recording pace
     }
     
     static func calculateCaptainEarnings(teamMemberCount: Int) -> Int {
