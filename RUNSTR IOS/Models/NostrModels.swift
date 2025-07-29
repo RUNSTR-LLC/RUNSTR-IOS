@@ -10,21 +10,37 @@ struct NostrKeyPair: Codable {
     
     /// Generate new key pair using NostrSDK
     static func generate() -> NostrKeyPair {
-        guard let keypair = Keypair() else {
-            print("❌ Failed to generate Nostr keys")
-            // Fallback to mock keys for development only
-            let mockPrivateKey = "nsec1" + String((0..<58).map { _ in "abcdefghijklmnopqrstuvwxyz0123456789".randomElement()! })
-            let mockPublicKey = "npub1" + String((0..<58).map { _ in "abcdefghijklmnopqrstuvwxyz0123456789".randomElement()! })
-            return NostrKeyPair(privateKey: mockPrivateKey, publicKey: mockPublicKey)
+        do {
+            guard let keypair = try Keypair() else {
+                throw NSError(domain: "NostrKeyPair", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create keypair"])
+            }
+            
+            let publicKey = keypair.publicKey.bech32
+            let privateKey = keypair.secretKey.bech32
+            
+            return NostrKeyPair(
+                privateKey: privateKey,
+                publicKey: publicKey
+            )
+        } catch {
+            print("❌ Failed to generate Nostr keys: \(error)")
+            
+            do {
+                guard let fallbackKeypair = try Keypair() else {
+                    fatalError("Unable to generate Nostr keys - this is a critical error")
+                }
+                let publicKey = fallbackKeypair.publicKey.bech32
+                let privateKey = fallbackKeypair.secretKey.bech32
+                
+                return NostrKeyPair(
+                    privateKey: privateKey,
+                    publicKey: publicKey
+                )
+            } catch {
+                print("❌ Fallback key generation also failed: \(error)")
+                fatalError("Unable to generate Nostr keys - this is a critical error")
+            }
         }
-        
-        let publicKey = keypair.publicKey.npub
-        let privateKey = keypair.privateKey.nsec
-        
-        return NostrKeyPair(
-            privateKey: privateKey,
-            publicKey: publicKey
-        )
     }
 }
 

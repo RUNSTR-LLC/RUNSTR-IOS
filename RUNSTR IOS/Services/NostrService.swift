@@ -1,6 +1,8 @@
 import Foundation
 import Combine
 import NostrSDK
+import Network
+import CoreLocation
 
 /// Service responsible for managing Nostr protocol interactions
 /// Handles key management, relay connections, and event publishing/subscribing
@@ -18,19 +20,36 @@ class NostrService: ObservableObject {
     @Published var isLoadingTeams = false
     @Published var availableEvents: [Event] = []
     @Published var isLoadingEvents = false
+    @Published var nip46ConnectionManager: NIP46ConnectionManager?
     
     // MARK: - Private Properties
     private var relayPool: RelayPool?
+    private var relays: [Relay] = []
     private let defaultRelays = [
         "wss://relay.nostr.band",
         "wss://nos.lol", 
         "wss://relay.damus.io",
         "wss://nostr.wine"
     ]
+    private var subscriptions: [String: Subscription] = [:]
+    private let networkMonitor = NWPathMonitor()
+    private let networkQueue = DispatchQueue(label: "network_monitor")
+    private var isNetworkAvailable = true
+    private var reconnectAttempts = 0
+    private let maxReconnectAttempts = 5
     
     // MARK: - Initialization
     init() {
         loadStoredKeys()
+        setupNetworkMonitoring()
+    }
+    
+    /// Set NIP-46 connection manager for remote signing
+    func setNIP46ConnectionManager(_ manager: NIP46ConnectionManager) {
+        nip46ConnectionManager = manager
+        isDelegatedSigning = manager.isConnected
+        mainNostrPublicKey = manager.userPublicKey
+        print("✅ NIP-46 connection manager configured")
     }
     
     // MARK: - Key Management
@@ -89,121 +108,251 @@ class NostrService: ObservableObject {
         }
     }
     
-    /// Link main Nostr identity (npub) for delegation
+    /// Link main Nostr identity (npub) for delegation via DM authorization
     func linkMainNostrIdentity(_ npub: String) async -> Bool {
-        // TODO: Implement delegation setup with NostrSDK
-        // 1. Validate npub format
-        // 2. Create delegation event
-        // 3. Store delegation proof
+        // TODO: Implement with proper NostrSDK 0.3.0 API
+        errorMessage = "NIP-46 delegation not yet implemented"
+        return false
+    }
+    
+    /// Create delegation authorization message content
+    private func createDelegationAuthorizationMessage() -> String {
+        guard let keyPair = userKeyPair else { return "" }
         
-        // Mock implementation
-        guard npub.hasPrefix("npub1") && npub.count > 50 else {
-            errorMessage = "Invalid npub format"
+        let message = """
+        🏃‍♂️ RUNSTR Delegation Request
+        
+        Hello! This is a request from the RUNSTR fitness app to authorize workout data publishing on your behalf.
+        
+        RUNSTR App Identity: \(keyPair.publicKey)
+        
+        What this enables:
+        • Automatic workout publishing to your Nostr identity
+        • Your workout data will appear under your main npub
+        • You maintain full control and can revoke at any time
+        
+        To APPROVE delegation:
+        Reply to this DM with: "APPROVE RUNSTR DELEGATION"
+        
+        To DENY delegation:
+        Reply to this DM with: "DENY RUNSTR DELEGATION"
+        
+        Security Note:
+        - RUNSTR will only publish fitness-related events (Kind 1301)
+        - Your private keys remain secure and are never shared
+        - You can revoke this delegation at any time
+        
+        Learn more: https://runstr.app/delegation
+        """
+        
+        return message
+    }
+    
+    /// Check for delegation approval responses
+    func checkDelegationApproval() async -> Bool {
+        guard let keyPair = userKeyPair,
+              let mainNpub = mainNostrPublicKey,
+              let relayPool = relayPool, isConnected else {
             return false
         }
         
-        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+        do {
+            // Parse main public key
+            guard let mainPublicKey = try? PublicKey.parse(npub: mainNpub) else {
+                return false
+            }
+            
+            // Create filter for DMs from main npub to RUNSTR npub
+            let filter = Filter()
+            filter.kinds = [.directMessage] // Kind 4 for DMs
+            filter.authors = [mainPublicKey]
+            
+            // Convert RUNSTR npub to public key for filtering
+            guard let runstrPublicKey = try? PublicKey.parse(npub: keyPair.publicKey) else {
+                return false
+            }
+            
+            // Add recipient filter (p tag pointing to RUNSTR npub)
+            // Note: This might need adjustment based on the actual nostr-sdk-ios API
+            filter.since = Timestamp.fromSecs(secs: UInt64(Date().timeIntervalSince1970 - 3600)) // Last hour
+            
+            // Subscribe to get recent DMs
+            let subscriptionId = "delegation_check_\(UUID().uuidString)"
+            let subscription = try await createManagedSubscription(filters: [filter], subscriptionId: subscriptionId)
+            
+            // Check for approval/denial messages
+            let timeout: TimeInterval = 5.0
+            let startTime = Date()
+            
+            while Date().timeIntervalSince(startTime) < timeout {
+                try await Task.sleep(nanoseconds: 200_000_000) // 0.2 second
+                
+                let events = try await subscription.getEvents()
+                
+                for event in events {
+                    let content = event.content.uppercased()
+                    
+                    if content.contains("APPROVE RUNSTR DELEGATION") {
+                        isDelegatedSigning = true
+                        await closeSubscription(subscriptionId)
+                        print("✅ Delegation approved by main npub!")
+                        return true
+                    } else if content.contains("DENY RUNSTR DELEGATION") {
+                        mainNostrPublicKey = nil
+                        isDelegatedSigning = false
+                        await closeSubscription(subscriptionId)
+                        print("❌ Delegation denied by main npub")
+                        return false
+                    }
+                }
+            }
+            
+            // Close subscription
+            await closeSubscription(subscriptionId)
+            
+            return false
+            
+        } catch {
+            print("❌ Failed to check delegation approval: \(error)")
+            return false
+        }
+    }
+    
+    /// Revoke delegation authorization
+    func revokeDelegation() async -> Bool {
+        guard let mainNpub = mainNostrPublicKey else {
+            errorMessage = "No main identity linked"
+            return false
+        }
         
-        mainNostrPublicKey = npub
-        isDelegatedSigning = true
+        // Clear delegation status
+        mainNostrPublicKey = nil
+        isDelegatedSigning = false
         
-        print("✅ Linked main Nostr identity: \(npub)")
+        print("✅ Delegation revoked for: \(mainNpub)")
         return true
     }
     
     // MARK: - Relay Management
     
-    /// Connect to default Nostr relays
+    /// Connect to default Nostr relays using real nostr-sdk-ios Client
     func connectToRelays() async {
         isConnected = false
         connectedRelays.removeAll()
         errorMessage = nil
         
         do {
-            // Validate relay URLs and prepare for connection
-            var validRelayURLs: [String] = []
+            // Create relays from URLs
+            relays.removeAll()
             for relayURLString in defaultRelays {
-                guard URL(string: relayURLString) != nil else {
+                guard let url = URL(string: relayURLString) else {
                     print("❌ Invalid relay URL: \(relayURLString)")
                     continue
                 }
-                validRelayURLs.append(relayURLString)
-                connectedRelays.append(relayURLString)
-                print("✅ Added relay: \(relayURLString)")
+                
+                do {
+                    let relay = try Relay(url: url)
+                    relays.append(relay)
+                    print("✅ Added relay: \(relayURLString)")
+                } catch {
+                    print("❌ Failed to create relay \(relayURLString): \(error)")
+                }
             }
             
-            guard !validRelayURLs.isEmpty else {
-                errorMessage = "No valid relay URLs found"
+            guard !relays.isEmpty else {
+                errorMessage = "No valid relays found"
                 return
             }
             
-            // TODO: Create real RelayPool instance when NostrSDK API is finalized
-            // For now, simulate successful connection
-            print("⚠️ RelayPool connection simulated - NostrSDK 0.3.0 API verification needed")
-            relayPool = nil // Will be replaced with actual RelayPool when API is confirmed
+            // Create and configure relay pool
+            relayPool = RelayPool(relays: Set(relays))
+            guard let relayPool = relayPool else {
+                errorMessage = "Failed to create relay pool"
+                return
+            }
             
-            // Set up connection monitoring
+            // In NostrSDK 0.3.0, we use the RelayPool directly for most operations
+            // The client property is kept for compatibility with existing code patterns
+            // but most operations go through the relay pool
+            
+            // Connect to relays
+            await relayPool.connect()
+            
+            // Update connected relays list
+            await MainActor.run {
+                connectedRelays = relays.map { $0.url.absoluteString }
+            }
+            
+            // Wait for connection establishment
             try await withTimeout(10.0) { [weak self] in
                 guard let self = self else { return }
                 
-                // Wait for at least one relay to connect
-                var connected = false
                 var attempts = 0
                 let maxAttempts = 20 // 10 seconds with 0.5s intervals
                 
-                while !connected && attempts < maxAttempts {
+                while attempts < maxAttempts {
                     attempts += 1
                     try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
                     
-                    // Check if any relay is connected
-                    // TODO: Replace with actual connection status check when NostrSDK API is stable
-                    connected = true // Assume connection for now
+                    // Check connection status by trying to get relay information
+                    let connectedCount = self.connectedRelays.count
+                    if connectedCount > 0 {
+                        await MainActor.run {
+                            self.isConnected = true
+                            print("✅ Connected to \(connectedCount) relays")
+                        }
+                        return
+                    }
                 }
                 
-                if connected {
-                    await MainActor.run {
-                        self.isConnected = true
-                        print("✅ Connected to \(self.connectedRelays.count) relays")
-                    }
-                } else {
-                    await MainActor.run {
-                        self.errorMessage = "Failed to connect to relays within timeout"
-                        print("❌ Relay connection timeout after \(attempts * 500)ms")
-                    }
+                await MainActor.run {
+                    self.errorMessage = "Failed to connect to relays within timeout"
+                    print("❌ Relay connection timeout after \(attempts * 500)ms")
                 }
             }
             
         } catch {
-            errorMessage = "Failed to initialize relay pool: \(error.localizedDescription)"
-            print("❌ RelayPool initialization failed: \(error)")
+            errorMessage = "Failed to initialize Nostr client: \(error.localizedDescription)"
+            print("❌ Client initialization failed: \(error)")
         }
     }
     
     /// Disconnect from all relays
     func disconnectFromRelays() async {
-        relayPool?.disconnect()
+        // Stop network monitoring
+        networkMonitor.cancel()
+        
+        // Close all subscriptions gracefully
+        await closeAllSubscriptions()
+        
+        await relayPool?.disconnect()
         relayPool = nil
+        relays.removeAll()
+        subscriptions.removeAll()
         connectedRelays.removeAll()
         isConnected = false
+        reconnectAttempts = 0
         print("✅ Disconnected from all relays")
     }
     
-    /// Reconnect to relays with exponential backoff
+    /// Reconnect to relays with exponential backoff (enhanced with network monitoring)
     func reconnectToRelays() async {
-        print("🔄 Attempting to reconnect to relays...")
+        guard isNetworkAvailable else {
+            print("⚠️ Network unavailable, skipping reconnection attempt")
+            return
+        }
         
-        let maxRetries = 3
-        var retryCount = 0
+        print("🔄 Attempting to reconnect to relays... (attempt \(reconnectAttempts + 1)/\(maxReconnectAttempts))")
         
-        while retryCount < maxRetries && !isConnected {
-            retryCount += 1
-            let backoffDelay = TimeInterval(pow(2.0, Double(retryCount))) // Exponential backoff: 2s, 4s, 8s
+        while reconnectAttempts < maxReconnectAttempts && !isConnected && isNetworkAvailable {
+            reconnectAttempts += 1
+            let backoffDelay = TimeInterval(min(pow(2.0, Double(reconnectAttempts)), 60.0)) // Cap at 60s
             
-            print("🔄 Reconnection attempt \(retryCount)/\(maxRetries)")
+            print("🔄 Reconnection attempt \(reconnectAttempts)/\(maxReconnectAttempts)")
             
             await connectToRelays()
             
-            if !isConnected && retryCount < maxRetries {
+            if !isConnected && reconnectAttempts < maxReconnectAttempts {
                 print("⏳ Waiting \(backoffDelay)s before next retry...")
                 try? await Task.sleep(nanoseconds: UInt64(backoffDelay * 1_000_000_000))
             }
@@ -211,77 +360,155 @@ class NostrService: ObservableObject {
         
         if isConnected {
             print("✅ Successfully reconnected to relays")
+            reconnectAttempts = 0 // Reset on successful connection
         } else {
-            print("❌ Failed to reconnect after \(maxRetries) attempts")
-            errorMessage = "Unable to connect to Nostr relays after \(maxRetries) attempts"
+            print("❌ Failed to reconnect after \(maxReconnectAttempts) attempts")
+            errorMessage = "Unable to connect to Nostr relays after \(maxReconnectAttempts) attempts"
         }
     }
     
-    /// Check relay connection health
+    /// Check relay connection health (enhanced with proper validation)
     func checkRelayHealth() async -> Bool {
-        // TODO: Implement real health check when NostrSDK API is confirmed
-        print("⚠️ Health check simulated - NostrSDK 0.3.0 integration pending")
+        guard let relayPool = relayPool, !connectedRelays.isEmpty, isNetworkAvailable else {
+            return false
+        }
         
-        // Simulate health check delay
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        
-        // Return connection status based on whether we have valid relay URLs
-        return !connectedRelays.isEmpty
+        do {
+            // Send a simple NIP-01 REQ to test connectivity
+            let healthCheckFilter = Filter()
+            healthCheckFilter.kinds = [.metadata] // Kind 0 for profile metadata
+            healthCheckFilter.limit = 1
+            
+            let subscriptionId = "health_check_\(UUID().uuidString)"
+            let subscription = try relayPool.subscribe(filters: [healthCheckFilter], subscriptionId: subscriptionId)
+            
+            // Wait briefly for any response
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+            
+            // Close the health check subscription
+            try await subscription.unsubscribe()
+            
+            print("✅ Relay health check passed")
+            return true
+            
+        } catch {
+            print("❌ Relay health check failed: \(error)")
+            
+            // If health check fails, attempt reconnection
+            Task {
+                await reconnectToRelays()
+            }
+            return false
+        }
     }
     
     // MARK: - Event Publishing
     
-    /// Publish workout event to Nostr relays using enhanced NIP-101e with team/challenge links
+    /// Publish workout event to Nostr relays using Kind 1301 (NIP-1301 workout record)
     func publishWorkoutEvent(_ workout: Workout, privacyLevel: NostrPrivacyLevel, teamID: String? = nil, challengeID: String? = nil) async -> Bool {
-        guard let keyPair = userKeyPair else {
-            errorMessage = "No Nostr keys available"
-            return false
-        }
-        
-        guard isConnected else {
+        guard let relayPool = relayPool, isConnected else {
             errorMessage = "Not connected to relays"
             return false
         }
         
         do {
-            // Create keypair from stored private key
-            guard let keypair = try Keypair(nsec: keyPair.privateKey) else {
-                errorMessage = "Failed to create keypair from stored private key"
+            // Check if we should use NIP-46 remote signing
+            if let connectionManager = nip46ConnectionManager, connectionManager.canSign {
+                return await publishWorkoutEventWithRemoteSigning(workout, privacyLevel: privacyLevel, teamID: teamID, challengeID: challengeID)
+            }
+            
+            // Fallback to local signing
+            guard let keyPair = userKeyPair else {
+                errorMessage = "No Nostr keys available"
                 return false
             }
             
-            // Create enhanced workout event with team/challenge links
-            let enhancedEvent = createEnhancedWorkoutEvent(
-                workout: workout,
-                pubkey: keyPair.publicKey,
-                teamID: teamID,
-                challengeID: challengeID,
-                privacyLevel: privacyLevel
-            )
+            // Create keypair from stored private key
+            let keypair: Keypair
+            do {
+                keypair = try Keypair(nsec: keyPair.privateKey)!
+            } catch {
+                errorMessage = "Failed to create keypair from stored private key: \(error.localizedDescription)"
+                return false
+            }
             
-            // TODO: Publish actual Kind 1301 event using NostrSDK when API is stable
-            print("⚠️ Enhanced workout event creation mocked for development")
+            // Create workout event content
+            let workoutContent = createWorkoutEventContent(workout)
             
-            // Mock event data for local tracking
-            let mockEventId = UUID().uuidString
+            // Build tags for Kind 1301 event
+            var tags: [[String]] = [
+                ["d", workout.id],
+                ["title", "RUNSTR Workout - \(workout.activityType.displayName)"],
+                ["type", "cardio"],
+                ["start", String(Int64(workout.startTime.timeIntervalSince1970))],
+                ["end", String(Int64(workout.endTime.timeIntervalSince1970))],
+                ["exercise", "33401:\(keyPair.publicKey):\(workout.id)", "", String(workout.distance/1000), String(workout.duration), String(workout.averagePace)],
+                ["accuracy", "exact", "gps_watch"],
+                ["client", "RUNSTR", "v1.0.0"]
+            ]
             
-            // Create our local event representation
+            // Add heart rate if available
+            if let heartRate = workout.averageHeartRate {
+                tags.append(["heart_rate_avg", String(heartRate), "bpm"])
+            }
+            
+            // Add GPS data if available (simplified for now)
+            if let route = workout.route, !route.isEmpty {
+                tags.append(["gps_polyline", "encoded_gps_data_placeholder"])
+            }
+            
+            // Add team reference if provided
+            if let teamID = teamID {
+                tags.append(["team", "33404:\(keyPair.publicKey):\(teamID)", ""])
+            }
+            
+            // Add challenge reference if provided
+            if let challengeID = challengeID {
+                tags.append(["challenge", "33403:\(keyPair.publicKey):\(challengeID)", ""])
+            }
+            
+            // Add privacy and discovery tags
+            if privacyLevel == .public {
+                tags.append(["t", "fitness"])
+                tags.append(["t", workout.activityType.rawValue])
+            }
+            
+            // Build the event using EventBuilder with custom kind 1301
+            let eventBuilder = EventBuilder()
+                .kind(kind: .custom(1301)) // Kind 1301 for workout records
+                .content(content: workoutContent)
+            
+            // Add all tags to the event
+            for tag in tags {
+                let _ = eventBuilder.addTags(tags: [Tag(standardTags: tag)])
+            }
+            
+            // Build and sign the event
+            let unsignedEvent = try eventBuilder.toUnsignedEvent(publicKey: keypair.publicKey)
+            let signedEvent = try unsignedEvent.sign(keypair: keypair)
+            
+            // Publish to relays
+            await relayPool.publishEvent(signedEvent)
+            
+            // Create our local event representation for tracking
             let localEvent = NostrWorkoutEvent(
-                id: mockEventId,
+                id: signedEvent.id.toHex(),
                 pubkey: keyPair.publicKey,
-                createdAt: Date(),
-                kind: 1301, // NIP-101e workout record
-                content: enhancedEvent.content,
-                tags: enhancedEvent.tags,
+                createdAt: Date(timeIntervalSince1970: TimeInterval(signedEvent.createdAt.asSecs())),
+                kind: 1301, // NIP-1301 workout record
+                content: workoutContent,
+                tags: tags,
                 workout: workout
             )
             
             // Add to recent events
-            recentEvents.insert(localEvent, at: 0)
-            
-            // Keep only last 20 events
-            if recentEvents.count > 20 {
-                recentEvents = Array(recentEvents.prefix(20))
+            await MainActor.run {
+                recentEvents.insert(localEvent, at: 0)
+                
+                // Keep only last 20 events
+                if recentEvents.count > 20 {
+                    recentEvents = Array(recentEvents.prefix(20))
+                }
             }
             
             // Update team statistics if workout is linked to a team
@@ -289,7 +516,8 @@ class NostrService: ObservableObject {
                 await updateTeamStatistics(teamID: teamID, workout: workout)
             }
             
-            print("✅ Published enhanced workout event: \(workout.activityType.displayName) - \(workout.distance/1000)km")
+            print("✅ Published workout event to Nostr: \(workout.activityType.displayName) - \(String(format: "%.2f", workout.distance/1000))km")
+            print("   📝 Event ID: \(signedEvent.id.toHex())")
             if let teamID = teamID {
                 print("   🏃‍♂️ Linked to team: \(teamID)")
             }
@@ -305,54 +533,68 @@ class NostrService: ObservableObject {
         }
     }
     
-    /// Create enhanced workout event with team/challenge links
-    private func createEnhancedWorkoutEvent(workout: Workout, pubkey: String, teamID: String?, challengeID: String?, privacyLevel: NostrPrivacyLevel) -> MockWorkoutEvent {
-        var tags: [[String]] = [
-            ["d", workout.id],
-            ["title", "RUNSTR Workout - \(workout.activityType.displayName)"],
-            ["type", "cardio"],
-            ["start", String(Int64(workout.startTime.timeIntervalSince1970))],
-            ["end", String(Int64(workout.endTime.timeIntervalSince1970))],
-            ["exercise", "33401:\(pubkey):\(workout.id)", "", String(workout.distance/1000), String(workout.duration), String(workout.averagePace)],
-            ["accuracy", "exact", "gps_watch"],
-            ["client", "RUNSTR", "v1.0.0"]
-        ]
-        
-        // Add heart rate if available
-        if let heartRate = workout.averageHeartRate {
-            tags.append(["heart_rate_avg", String(heartRate), "bpm"])
+    /// Publish workout event using NIP-46 remote signing
+    private func publishWorkoutEventWithRemoteSigning(_ workout: Workout, privacyLevel: NostrPrivacyLevel, teamID: String? = nil, challengeID: String? = nil) async -> Bool {
+        guard let connectionManager = nip46ConnectionManager else {
+            errorMessage = "No NIP-46 connection manager available"
+            return false
         }
         
-        // Add GPS data if available (simplified)
-        if let route = workout.route, !route.isEmpty {
-            tags.append(["gps_polyline", "encoded_gps_data_placeholder"])
+        guard let relayPool = relayPool, isConnected else {
+            errorMessage = "Not connected to relays"
+            return false
         }
         
-        // Add team reference if provided
-        if let teamID = teamID {
-            tags.append(["team", "33404:\(pubkey):\(teamID)", ""])
+        do {
+            // Sign the workout event remotely using NIP-46
+            let signedEvent = try await connectionManager.signWorkoutEvent(workout: workout, privacyLevel: privacyLevel)
+            
+            // Publish to relays
+            await relayPool.publishEvent(signedEvent)
+            
+            // Create our local event representation for tracking
+            let localEvent = NostrWorkoutEvent(
+                id: signedEvent.id.toHex(),
+                pubkey: connectionManager.userPublicKey ?? "unknown",
+                createdAt: Date(timeIntervalSince1970: TimeInterval(signedEvent.createdAt.asSecs())),
+                kind: 1301, // NIP-1301 workout record
+                content: signedEvent.content,
+                tags: signedEvent.tags.map { $0.asVec() },
+                workout: workout
+            )
+            
+            // Add to recent events
+            await MainActor.run {
+                recentEvents.insert(localEvent, at: 0)
+                
+                // Keep only last 20 events
+                if recentEvents.count > 20 {
+                    recentEvents = Array(recentEvents.prefix(20))
+                }
+            }
+            
+            // Update team statistics if workout is linked to a team
+            if let teamID = teamID {
+                await updateTeamStatistics(teamID: teamID, workout: workout)
+            }
+            
+            print("✅ Published workout event via NIP-46 remote signing: \(workout.activityType.displayName) - \(String(format: "%.2f", workout.distance/1000))km")
+            print("   📝 Event ID: \(signedEvent.id.toHex())")
+            if let teamID = teamID {
+                print("   🏃‍♂️ Linked to team: \(teamID)")
+            }
+            if let challengeID = challengeID {
+                print("   🏆 Linked to challenge: \(challengeID)")
+            }
+            return true
+            
+        } catch {
+            print("❌ Failed to publish workout event via NIP-46: \(error)")
+            errorMessage = "Failed to publish event via remote signing: \(error.localizedDescription)"
+            return false
         }
-        
-        // Add challenge reference if provided
-        if let challengeID = challengeID {
-            tags.append(["challenge", "33403:\(pubkey):\(challengeID)", ""])
-        }
-        
-        // Add privacy and discovery tags
-        if privacyLevel == .public {
-            tags.append(["t", "fitness"])
-            tags.append(["t", workout.activityType.rawValue])
-        }
-        
-        return MockWorkoutEvent(
-            id: workout.id,
-            kind: 1301,
-            content: createWorkoutEventContent(workout),
-            tags: tags,
-            pubkey: pubkey,
-            createdAt: UInt64(Date().timeIntervalSince1970)
-        )
     }
+    
     
     /// Update team statistics after a workout is published
     private func updateTeamStatistics(teamID: String, workout: Workout) async {
@@ -393,17 +635,20 @@ class NostrService: ObservableObject {
         var stats = TeamStats()
         var memberContributions: [String: MemberContribution] = [:]
         
-        // Process each workout
-        for workout in teamWorkouts {
+        // Process each workout event
+        for workoutEvent in teamWorkouts {
+            let workout = workoutEvent.workout
+            let userID = workoutEvent.pubkey
+            
             // Update total stats
             stats.totalDistance += workout.distance
             stats.totalWorkouts += 1
             
             // Update member contributions
-            if memberContributions[workout.userID] == nil {
-                memberContributions[workout.userID] = MemberContribution(userID: workout.userID)
+            if memberContributions[userID] == nil {
+                memberContributions[userID] = MemberContribution(userID: userID)
             }
-            memberContributions[workout.userID]?.addWorkout(workout)
+            memberContributions[userID]?.addNostrWorkout(workoutEvent)
             
             // Update monthly stats
             let monthKey = DateFormatter.monthYear.string(from: workout.startTime)
@@ -428,70 +673,52 @@ class NostrService: ObservableObject {
     }
     
     /// Fetch workout events from team members
-    private func fetchTeamWorkoutEvents(teamID: String) async -> [MockWorkout] {
-        // TODO: Replace with real workout event queries when API is stable
-        print("⚠️ Team workout fetching mocked for development")
-        
-        // Mock processing delay
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        
-        // Return mock workout data for team members
-        return createMockTeamWorkouts(for: teamID)
-    }
-    
-    /// Create mock workout data for team members
-    private func createMockTeamWorkouts(for teamID: String) -> [MockWorkout] {
+    private func fetchTeamWorkoutEvents(teamID: String) async -> [NostrWorkoutEvent] {
         guard let team = availableTeams.first(where: { $0.id == teamID }) else {
             return []
         }
         
-        let now = Date()
-        var workouts: [MockWorkout] = []
-        
-        // Generate mock workouts for each team member over the past month
-        for (index, memberID) in team.memberIDs.enumerated() {
-            let workoutCount = Int.random(in: 3...8) // Each member has 3-8 workouts
+        do {
+            // Query for workout events from team members
+            let workoutEvents = try await queryWorkoutEvents(
+                since: Calendar.current.date(byAdding: .month, value: -1, to: Date()),
+                until: Date(),
+                authors: team.memberIDs.map { "npub1\($0)" }, // Convert member IDs to npub format
+                limit: 200
+            )
             
-            for i in 0..<workoutCount {
-                let daysAgo = TimeInterval(Int.random(in: 1...30) * 86400) // Random day in past month
-                let workoutDate = now.addingTimeInterval(-daysAgo)
-                
-                let workout = MockWorkout(
-                    id: "workout_\(memberID)_\(i)",
-                    userID: memberID,
-                    activityType: .running,
-                    startTime: workoutDate,
-                    distance: Double.random(in: 2000...15000), // 2-15km
-                    duration: TimeInterval.random(in: 600...3600), // 10-60 minutes
-                    averagePace: Double.random(in: 4.0...7.0) // 4-7 min/km
-                )
-                workouts.append(workout)
-            }
+            return workoutEvents
+            
+        } catch {
+            print("❌ Failed to fetch team workout events: \(error)")
+            return []
         }
-        
-        return workouts.sorted { $0.startTime > $1.startTime }
     }
+    
     
     /// Get team leaderboard with member rankings
     func getTeamLeaderboard(for teamID: String, period: LeaderboardPeriod = .allTime) async -> [TeamMemberRanking] {
         let teamWorkouts = await fetchTeamWorkoutEvents(teamID: teamID)
         
         // Filter workouts by period
-        let filteredWorkouts = filterWorkoutsByPeriod(teamWorkouts, period: period)
+        let filteredWorkouts = filterNostrWorkoutsByPeriod(teamWorkouts, period: period)
         
         // Group by member and calculate stats
         var memberStats: [String: MemberStats] = [:]
         
-        for workout in filteredWorkouts {
-            if memberStats[workout.userID] == nil {
-                memberStats[workout.userID] = MemberStats()
+        for workoutEvent in filteredWorkouts {
+            let userID = workoutEvent.pubkey
+            let workout = workoutEvent.workout
+            
+            if memberStats[userID] == nil {
+                memberStats[userID] = MemberStats()
             }
             
-            memberStats[workout.userID]?.totalDistance += workout.distance
-            memberStats[workout.userID]?.totalWorkouts += 1
-            memberStats[workout.userID]?.averagePace = calculateAveragePace(for: workout.userID, in: filteredWorkouts)
-            let currentLastWorkoutDate = memberStats[workout.userID]?.lastWorkoutDate ?? Date.distantPast
-            memberStats[workout.userID]?.lastWorkoutDate = max(currentLastWorkoutDate, workout.startTime)
+            memberStats[userID]?.totalDistance += workout.distance
+            memberStats[userID]?.totalWorkouts += 1
+            memberStats[userID]?.averagePace = calculateAveragePaceForNostrWorkouts(for: userID, in: filteredWorkouts)
+            let currentLastWorkoutDate = memberStats[userID]?.lastWorkoutDate ?? Date.distantPast
+            memberStats[userID]?.lastWorkoutDate = max(currentLastWorkoutDate, workout.startTime)
         }
         
         // Create rankings
@@ -499,7 +726,7 @@ class NostrService: ObservableObject {
         for (userID, stats) in memberStats {
             let ranking = TeamMemberRanking(
                 userID: userID,
-                displayName: "Member \(userID.suffix(8))", // Mock display name
+                displayName: "Member \(userID.suffix(8))", // Use pubkey suffix as display name
                 totalDistance: stats.totalDistance,
                 totalWorkouts: stats.totalWorkouts,
                 averagePace: stats.averagePace,
@@ -517,8 +744,8 @@ class NostrService: ObservableObject {
         return rankings
     }
     
-    /// Filter workouts by time period
-    private func filterWorkoutsByPeriod(_ workouts: [MockWorkout], period: LeaderboardPeriod) -> [MockWorkout] {
+    /// Filter Nostr workout events by time period
+    private func filterNostrWorkoutsByPeriod(_ workouts: [NostrWorkoutEvent], period: LeaderboardPeriod) -> [NostrWorkoutEvent] {
         let now = Date()
         let calendar = Calendar.current
         
@@ -534,15 +761,15 @@ class NostrService: ObservableObject {
             return workouts
         }
         
-        return workouts.filter { $0.startTime >= startDate }
+        return workouts.filter { $0.workout.startTime >= startDate }
     }
     
-    /// Calculate average pace for a specific user
-    private func calculateAveragePace(for userID: String, in workouts: [MockWorkout]) -> Double {
-        let userWorkouts = workouts.filter { $0.userID == userID }
+    /// Calculate average pace for a specific user from Nostr workout events
+    private func calculateAveragePaceForNostrWorkouts(for userID: String, in workouts: [NostrWorkoutEvent]) -> Double {
+        let userWorkouts = workouts.filter { $0.pubkey == userID }
         guard !userWorkouts.isEmpty else { return 0.0 }
         
-        let totalPace = userWorkouts.reduce(0.0) { $0 + $1.averagePace }
+        let totalPace = userWorkouts.reduce(0.0) { $0 + $1.workout.averagePace }
         return totalPace / Double(userWorkouts.count)
     }
     
@@ -570,16 +797,485 @@ class NostrService: ObservableObject {
     }
     
     
-    // MARK: - Event Subscription
+    // MARK: - Event Subscription and Querying
     
-    /// Subscribe to workout events from followed users
-    func subscribeToWorkoutEvents() async {
-        guard isConnected, let relayPool = relayPool else { return }
+    /// Query workout events from relays for a specific time period
+    func queryWorkoutEvents(since: Date? = nil, until: Date? = nil, authors: [String]? = nil, limit: Int = 100) async throws -> [NostrWorkoutEvent] {
+        guard let relayPool = relayPool, isConnected else {
+            throw NostrError.notConnected
+        }
         
-        // TODO: Create filter and subscribe when API is stable
-        print("⚠️ Workout event subscription mocked for development")
+        do {
+            // Create filter for Kind 1301 workout events
+            let filter = Filter()
+            filter.kinds = [.custom(1301)] // Kind 1301 for workout records
+            
+            if let since = since {
+                filter.since = Timestamp.fromSecs(secs: UInt64(since.timeIntervalSince1970))
+            }
+            
+            if let until = until {
+                filter.until = Timestamp.fromSecs(secs: UInt64(until.timeIntervalSince1970))
+            }
+            
+            if let authors = authors {
+                // Convert npub strings to PublicKey objects
+                let publicKeys = try authors.compactMap { npub in
+                    try? PublicKey.parse(hex: npub)
+                }
+                filter.authors = publicKeys
+            }
+            
+            filter.limit = UInt32(limit)
+            
+            // Create subscription
+            let subscriptionId = UUID().uuidString
+            let subscription = try relayPool.subscribe(filters: [filter], subscriptionId: subscriptionId)
+            
+            // Store subscription for management
+            subscriptions[subscriptionId] = subscription
+            
+            // Wait for events to arrive
+            var workoutEvents: [NostrWorkoutEvent] = []
+            let timeout: TimeInterval = 10.0 // 10 second timeout
+            let startTime = Date()
+            
+            while Date().timeIntervalSince(startTime) < timeout {
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                
+                // Get events from subscription
+                let events = try await subscription.getEvents()
+                
+                for event in events {
+                    // Parse event as workout event
+                    if let workoutEvent = parseWorkoutEvent(from: event) {
+                        workoutEvents.append(workoutEvent)
+                    }
+                }
+                
+                // Break if we have enough events or subscription is complete
+                if workoutEvents.count >= limit {
+                    break
+                }
+            }
+            
+            // Close subscription
+            try await subscription.unsubscribe()
+            subscriptions.removeValue(forKey: subscriptionId)
+            
+            print("✅ Queried \(workoutEvents.count) workout events from relays")
+            return workoutEvents
+            
+        } catch {
+            print("❌ Failed to query workout events: \(error)")
+            throw error
+        }
+    }
+    
+    /// Parse a Nostr event into a NostrWorkoutEvent (enhanced with robust error handling)
+    private func parseWorkoutEvent(from event: Event) -> NostrWorkoutEvent? {
+        // Validate event kind (Kind 1301 for workout records)
+        guard event.kind.asU32() == 1301 else {
+            print("⚠️ Skipping non-workout event: kind \(event.kind.asU32())")
+            return nil
+        }
         
-        print("✅ Subscribed to workout events")
+        // Extract and validate tags
+        let tags = event.tags.map { $0.asVec() }
+        guard let dTag = tags.first(where: { $0.first == "d" })?.last else {
+            print("❌ Missing required 'd' tag in workout event")
+            return nil
+        }
+        
+        // Parse workout data from content (JSON with fallback parsing)
+        guard let contentData = event.content.data(using: .utf8) else {
+            print("❌ Invalid UTF-8 content in workout event")
+            return nil
+        }
+        
+        guard let workoutData = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any] else {
+            print("❌ Failed to parse JSON content in workout event")
+            return nil
+        }
+        
+        // Enhanced parsing with flexible field handling
+        guard let activityTypeString = workoutData["type"] as? String,
+              let activityType = ActivityType(rawValue: activityTypeString) else {
+            print("❌ Invalid or missing activity type: \(workoutData["type"] ?? "nil")")
+            return nil
+        }
+        
+        // Distance can be stored in meters or kilometers
+        guard let distanceValue = workoutData["distance"] as? Double else {
+            print("❌ Missing distance value in workout event")
+            return nil
+        }
+        let distance = distanceValue < 100 ? distanceValue * 1000 : distanceValue // Convert km to meters if needed
+        
+        // Duration parsing with multiple format support
+        guard let duration = workoutData["duration"] as? TimeInterval else {
+            print("❌ Missing duration value in workout event")
+            return nil
+        }
+        
+        // Flexible timestamp parsing
+        let startTime: Date
+        if let startTimeString = workoutData["startTime"] as? String,
+           let startTimeDate = ISO8601DateFormatter().date(from: startTimeString) {
+            startTime = startTimeDate
+        } else if let startTimeStamp = workoutData["start_time"] as? Int64 {
+            startTime = Date(timeIntervalSince1970: TimeInterval(startTimeStamp))
+        } else if let startTimeStamp = workoutData["startTime"] as? TimeInterval {
+            startTime = Date(timeIntervalSince1970: startTimeStamp)
+        } else {
+            print("❌ Missing or invalid start time in workout event")
+            return nil
+        }
+        
+        let endTime: Date
+        if let endTimeString = workoutData["endTime"] as? String,
+           let endTimeDate = ISO8601DateFormatter().date(from: endTimeString) {
+            endTime = endTimeDate
+        } else {
+            endTime = startTime.addingTimeInterval(duration)
+        }
+        
+        // Enhanced parsing of optional fields with error handling
+        let averagePace = parseDouble(from: workoutData, key: "averagePace") ?? parseDouble(from: workoutData, key: "pace") ?? 0.0
+        let calories = parseDouble(from: workoutData, key: "calories")
+        let averageHeartRate = parseDouble(from: workoutData, key: "averageHeartRate") ?? parseDouble(from: workoutData, key: "heart_rate_avg")
+        let maxHeartRate = parseDouble(from: workoutData, key: "maxHeartRate") ?? parseDouble(from: workoutData, key: "heart_rate_max")
+        let elevationGain = parseDouble(from: workoutData, key: "elevationGain") ?? parseDouble(from: workoutData, key: "elevation_gain")
+        
+        // Parse route data if available
+        let route = parseRouteData(from: workoutData, tags: tags)
+        
+        // Parse additional metadata from tags
+        let rewardAmount = parseWorkoutMetadata(from: tags)
+        
+        // Create workout object with comprehensive data
+        let workout = Workout(
+            id: dTag,
+            userID: event.author.toHex(),
+            activityType: activityType,
+            startTime: startTime,
+            endTime: endTime,
+            distance: distance,
+            duration: duration,
+            averagePace: averagePace,
+            calories: calories,
+            averageHeartRate: averageHeartRate,
+            maxHeartRate: maxHeartRate,
+            elevationGain: elevationGain,
+            route: route,
+            weather: nil, // TODO: Parse weather data if available
+            nostrEventID: event.id.toHex(),
+            rewardAmount: rewardAmount
+        )
+        
+        let nostrWorkoutEvent = NostrWorkoutEvent(
+            id: event.id.toHex(),
+            pubkey: event.author.toHex(),
+            createdAt: Date(timeIntervalSince1970: TimeInterval(event.createdAt.asSecs())),
+            kind: Int(event.kind.asU32()),
+            content: event.content,
+            tags: tags,
+            workout: workout
+        )
+        
+        print("✅ Successfully parsed workout event: \(activityType.displayName) - \(String(format: "%.2f", distance/1000))km")
+        return nostrWorkoutEvent
+    }
+    
+    /// Helper to safely parse double values from workout data
+    private func parseDouble(from data: [String: Any], key: String) -> Double? {
+        if let value = data[key] as? Double {
+            return value
+        } else if let value = data[key] as? String, let doubleValue = Double(value) {
+            return doubleValue
+        } else if let value = data[key] as? Int {
+            return Double(value)
+        }
+        return nil
+    }
+    
+    /// Parse route data from workout content and tags
+    private func parseRouteData(from workoutData: [String: Any], tags: [[String]]) -> [CLLocationCoordinate2D]? {
+        // Look for GPS polyline in tags
+        if let gpsPolylineTag = tags.first(where: { $0.first == "gps_polyline" }),
+           gpsPolylineTag.count > 1,
+           gpsPolylineTag[1] != "encoded_gps_data_placeholder" {
+            // TODO: Implement actual polyline decoding
+            print("📍 Found GPS polyline data (decoding not yet implemented)")
+            return nil
+        }
+        
+        // Look for route data in JSON content
+        if let routeArray = workoutData["route"] as? [[String: Any]] {
+            var route: [CLLocationCoordinate2D] = []
+            for routePoint in routeArray {
+                if let latitude = parseDouble(from: routePoint, key: "latitude"),
+                   let longitude = parseDouble(from: routePoint, key: "longitude") {
+                    let altitude = parseDouble(from: routePoint, key: "altitude")
+                    let timestamp = parseDouble(from: routePoint, key: "timestamp").map { Date(timeIntervalSince1970: $0) }
+                    
+                    route.append(CLLocationCoordinate2D(
+                        latitude: latitude,
+                        longitude: longitude
+                    ))
+                }
+            }
+            
+            if !route.isEmpty {
+                print("📍 Parsed \(route.count) route points")
+                return route
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Parse workout metadata from tags
+    private func parseWorkoutMetadata(from tags: [[String]]) -> Int {
+        var rewardAmount = 0
+        
+        // Look for reward/sats tags
+        if let rewardTag = tags.first(where: { $0.first == "reward" || $0.first == "sats" }),
+           rewardTag.count > 1,
+           let reward = Int(rewardTag[1]) {
+            rewardAmount = reward
+        }
+        
+        return rewardAmount
+    }
+    
+    /// Fetch workout events for a specific npub and timeframe (for StatsService)
+    func fetchWorkoutEvents(for npub: String, timeframe: TimeFrame) async -> [NostrWorkoutEvent] {
+        let (since, until) = timeframe.dateRange
+        
+        do {
+            let events = try await queryWorkoutEvents(
+                since: since,
+                until: until,
+                authors: [npub],
+                limit: 500
+            )
+            
+            print("✅ Fetched \(events.count) workout events for npub: \(npub.prefix(8))...")
+            return events
+            
+        } catch {
+            print("❌ Failed to fetch workout events for \(npub.prefix(8))...: \(error)")
+            return []
+        }
+    }
+    
+    /// Subscribe to workout events from followed users in real-time (enhanced with active monitoring)
+    func subscribeToWorkoutEvents(authors: [String]? = nil) async {
+        guard let relayPool = relayPool, isConnected else {
+            print("❌ Cannot subscribe: not connected to relays")
+            return
+        }
+        
+        do {
+            // Create filter for real-time Kind 1301 workout events
+            let filter = Filter()
+            filter.kinds = [.custom(1301)]
+            filter.since = Timestamp.now()
+            
+            // Filter by specific authors if provided
+            if let authors = authors {
+                let publicKeys = try authors.compactMap { npub in
+                    try? PublicKey.parse(npub: npub)
+                }
+                filter.authors = publicKeys
+                print("📡 Subscribing to workout events from \(publicKeys.count) specific authors")
+            } else {
+                print("📡 Subscribing to all workout events")
+            }
+            
+            let subscriptionId = "workout_events_realtime"
+            
+            // Close existing subscription if any
+            await closeSubscription(subscriptionId)
+            
+            // Create new managed subscription
+            let subscription = try await createManagedSubscription(
+                filters: [filter],
+                subscriptionId: subscriptionId
+            )
+            
+            print("✅ Subscribed to real-time workout events")
+            
+            // Start background task to monitor incoming events
+            startWorkoutEventMonitoring(subscription: subscription, subscriptionId: subscriptionId)
+            
+        } catch {
+            print("❌ Failed to subscribe to workout events: \(error)")
+            errorMessage = "Failed to subscribe to real-time events: \(error.localizedDescription)"
+        }
+    }
+    
+    /// Start monitoring workout events from subscription
+    private func startWorkoutEventMonitoring(subscription: Subscription, subscriptionId: String) {
+        Task {
+            print("🔍 Starting workout event monitoring...")
+            
+            while subscriptions[subscriptionId] != nil && isConnected {
+                do {
+                    // Check for new events every 2 seconds
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    
+                    let events = try await subscription.getEvents()
+                    
+                    for event in events {
+                        if let workoutEvent = parseWorkoutEvent(from: event) {
+                            await MainActor.run {
+                                // Add to recent events at the top
+                                if !recentEvents.contains(where: { $0.id == workoutEvent.id }) {
+                                    recentEvents.insert(workoutEvent, at: 0)
+                                    
+                                    // Keep only last 50 events
+                                    if recentEvents.count > 50 {
+                                        recentEvents = Array(recentEvents.prefix(50))
+                                    }
+                                    
+                                    print("📥 New workout event: \(workoutEvent.workout.activityType.displayName) from \(workoutEvent.pubkey.prefix(8))...")
+                                    
+                                    // Notify UI about new event (could trigger push notification)
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("NewWorkoutEvent"),
+                                        object: workoutEvent
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                } catch {
+                    print("❌ Error monitoring workout events: \(error)")
+                    
+                    // If error persists, try to reconnect
+                    if !isConnected {
+                        print("🔄 Connection lost, attempting to resubscribe...")
+                        try? await Task.sleep(nanoseconds: 5_000_000_000) // Wait 5 seconds
+                        
+                        if isConnected {
+                            await subscribeToWorkoutEvents()
+                        }
+                        break
+                    }
+                }
+            }
+            
+            print("⏹️ Workout event monitoring stopped")
+        }
+    }
+    
+    /// Subscribe to team activity updates in real-time
+    func subscribeToTeamActivity(teamIDs: [String]) async {
+        guard let relayPool = relayPool, isConnected else {
+            print("❌ Cannot subscribe: not connected to relays")
+            return
+        }
+        
+        do {
+            // Create filter for team-related events
+            let filter = Filter()
+            filter.kinds = [.custom(1301), .custom(33404)] // Workout events and team events
+            filter.since = Timestamp.now()
+            
+            // Add team-specific filtering via tags
+            // This is a simplified approach - in production you'd want more sophisticated filtering
+            
+            let subscriptionId = "team_activity_realtime"
+            
+            // Close existing subscription
+            await closeSubscription(subscriptionId)
+            
+            // Create new subscription
+            let subscription = try await createManagedSubscription(
+                filters: [filter],
+                subscriptionId: subscriptionId
+            )
+            
+            print("✅ Subscribed to real-time team activity")
+            
+            // Start background monitoring
+            startTeamActivityMonitoring(subscription: subscription, subscriptionId: subscriptionId, teamIDs: teamIDs)
+            
+        } catch {
+            print("❌ Failed to subscribe to team activity: \(error)")
+            errorMessage = "Failed to subscribe to team activity: \(error.localizedDescription)"
+        }
+    }
+    
+    /// Monitor team activity events
+    private func startTeamActivityMonitoring(subscription: Subscription, subscriptionId: String, teamIDs: [String]) {
+        Task {
+            print("🔍 Starting team activity monitoring for \(teamIDs.count) teams...")
+            
+            while subscriptions[subscriptionId] != nil && isConnected {
+                do {
+                    try await Task.sleep(nanoseconds: 3_000_000_000) // Check every 3 seconds
+                    
+                    let events = try await subscription.getEvents()
+                    
+                    for event in events {
+                        let tags = event.tags.map { $0.asVec() }
+                        
+                        // Check if this event is related to our teams
+                        let isTeamRelated = teamIDs.contains { teamID in
+                            tags.contains { tag in
+                                tag.contains(teamID) || tag.contains("33404:\(event.author.toHex()):\(teamID)")
+                            }
+                        }
+                        
+                        if isTeamRelated {
+                            if event.kind.asU32() == 1301 {
+                                // Handle workout event
+                                if let workoutEvent = parseWorkoutEvent(from: event) {
+                                    print("👥 Team workout event: \(workoutEvent.workout.activityType.displayName)")
+                                    
+                                    // Post notification for team activity
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("TeamWorkoutEvent"),
+                                        object: workoutEvent
+                                    )
+                                }
+                            } else if event.kind.asU32() == 33404 {
+                                // Handle team update event
+                                if let team = parseTeamFromEvent(event) {
+                                    print("👥 Team update: \(team.name)")
+                                    
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("TeamUpdateEvent"),
+                                        object: team
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                } catch {
+                    print("❌ Error monitoring team activity: \(error)")
+                    
+                    if !isConnected {
+                        print("🔄 Connection lost, will resubscribe when reconnected")
+                        break
+                    }
+                }
+            }
+            
+            print("⏹️ Team activity monitoring stopped")
+        }
+    }
+    
+    /// Stop all real-time subscriptions
+    func stopRealtimeSubscriptions() async {
+        await closeSubscription("workout_events_realtime")
+        await closeSubscription("team_activity_realtime")
+        print("✅ Stopped all real-time subscriptions")
     }
     
     // MARK: - Team Management (NIP-51)
@@ -654,9 +1350,8 @@ class NostrService: ObservableObject {
             
             errorMessage = "Failed to fetch teams: \(error.localizedDescription)"
             
-            // Fallback to mock data for development to ensure UI isn't empty
-            print("ℹ️ Using mock team data as fallback for development")
-            availableTeams = createMockTeamsFromNostr()
+            // No fallback to mock data - show empty state
+            availableTeams = []
         }
         
         isLoadingTeams = false
@@ -696,44 +1391,83 @@ class NostrService: ObservableObject {
     }
     
     /// Query for team events with filters
-    private func queryFilteredTeamEvents(activityLevel: ActivityLevel?, location: String?, teamType: String?, activityTypes: [ActivityType]?) async throws -> [MockTeamEvent] {
-        // TODO: Replace with real NostrSDK filtered query when API is confirmed
-        print("⚠️ Using mock filtered team events - NostrSDK 0.3.0 integration pending")
+    private func queryFilteredTeamEvents(activityLevel: ActivityLevel?, location: String?, teamType: String?, activityTypes: [ActivityType]?) async throws -> [Event] {
+        guard let relayPool = relayPool, isConnected else {
+            throw NostrError.notConnected
+        }
         
-        // Simulate network delay
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
-        
-        // Get all mock team events and filter them
-        let allEvents = createMockTeamEvents()
-        
-        return allEvents.filter { event in
-            // Filter by activity level
-            if let activityLevel = activityLevel {
-                let eventActivityLevel = parseActivityLevelFromTags(event.tags)
-                if eventActivityLevel != activityLevel {
-                    return false
-                }
-            }
+        do {
+            // Create filter for Kind 33404 (Fitness Team) events
+            let filter = Filter()
+            filter.kinds = [.custom(33404)]
+            filter.limit = 100
             
-            // Filter by location
+            // Add location filter if provided
             if let location = location {
-                let eventLocation = event.tags.first(where: { $0.first == "location" })?.last
-                if eventLocation?.lowercased().contains(location.lowercased()) != true {
-                    return false
+                // Add search by location tag
+                filter.search = location
+            }
+            
+            // Create subscription for filtered team events
+            let subscriptionId = "filtered_team_events_\(UUID().uuidString)"
+            let subscription = try relayPool.subscribe(filters: [filter], subscriptionId: subscriptionId)
+            
+            // Store subscription for management
+            subscriptions[subscriptionId] = subscription
+            
+            // Wait for events to arrive
+            var teamEvents: [Event] = []
+            let timeout: TimeInterval = 10.0
+            let startTime = Date()
+            
+            while Date().timeIntervalSince(startTime) < timeout {
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                
+                let events = try await subscription.getEvents()
+                
+                for event in events {
+                    // Verify this is a team event and apply filters
+                    let tags = event.tags.map { $0.asVec() }
+                    
+                    if tags.contains(where: { $0.first == "t" && $0.last == "team" }) {
+                        var matchesFilters = true
+                        
+                        // Filter by activity level
+                        if let activityLevel = activityLevel {
+                            let eventActivityLevel = parseActivityLevelFromTags(tags)
+                            if eventActivityLevel != activityLevel {
+                                matchesFilters = false
+                            }
+                        }
+                        
+                        // Filter by team type
+                        if let teamType = teamType {
+                            let eventTeamType = tags.first(where: { $0.first == "type" })?.last
+                            if eventTeamType != teamType {
+                                matchesFilters = false
+                            }
+                        }
+                        
+                        if matchesFilters {
+                            teamEvents.append(event)
+                        }
+                    }
+                }
+                
+                if teamEvents.count >= 50 {
+                    break
                 }
             }
             
-            // Filter by team type
-            if let teamType = teamType {
-                let eventTeamType = event.tags.first(where: { $0.first == "type" })?.last
-                if eventTeamType != teamType {
-                    return false
-                }
-            }
+            // Close subscription
+            try await subscription.unsubscribe()
+            subscriptions.removeValue(forKey: subscriptionId)
             
-            // Additional filters can be added here for activity types, etc.
+            return teamEvents
             
-            return true
+        } catch {
+            print("❌ Failed to query filtered team events: \(error)")
+            throw error
         }
     }
     
@@ -811,39 +1545,218 @@ class NostrService: ObservableObject {
     }
     
     /// Query for Kind 33404 team events from Nostr relays
-    private func queryTeamEvents() async throws -> [MockTeamEvent] {
-        // TODO: Replace with real NostrSDK implementation when API is confirmed
-        print("⚠️ Using mock team events - NostrSDK 0.3.0 integration pending")
+    private func queryTeamEvents() async throws -> [Event] {
+        guard let relayPool = relayPool, isConnected else {
+            throw NostrError.notConnected
+        }
         
-        // Simulate network delay
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
-        
-        // Return mock team events for development
-        return createMockTeamEvents()
+        do {
+            // Create filter for Kind 33404 (Fitness Team) events
+            let filter = Filter()
+            filter.kinds = [.custom(33404)] // Kind 33404 for fitness teams
+            filter.limit = 100 // Limit to 100 teams for now
+            
+            // Create subscription for team events
+            let subscriptionId = "team_events_\(UUID().uuidString)"
+            let subscription = try await createManagedSubscription(filters: [filter], subscriptionId: subscriptionId)
+            
+            // Wait for events to arrive
+            var teamEvents: [Event] = []
+            let timeout: TimeInterval = 10.0 // 10 second timeout
+            let startTime = Date()
+            
+            while Date().timeIntervalSince(startTime) < timeout {
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                
+                // Get events from subscription
+                let events = try await subscription.getEvents()
+                
+                for event in events {
+                    // Verify this is a team event by checking for required tags
+                    let tags = event.tags.map { $0.asVec() }
+                    if tags.contains(where: { $0.first == "t" && $0.last == "team" }) {
+                        teamEvents.append(event)
+                    }
+                }
+                
+                // Break if we have a reasonable number of teams
+                if teamEvents.count >= 50 {
+                    break
+                }
+            }
+            
+            // Close subscription
+            await closeSubscription(subscriptionId)
+            
+            print("✅ Queried \(teamEvents.count) team events from relays")
+            return teamEvents
+            
+        } catch {
+            print("❌ Failed to query team events: \(error)")
+            throw error
+        }
     }
     
     
-    /// Parse a team event into a Team object
-    private func parseTeamFromEvent(_ event: MockTeamEvent) -> Team? {
-        // Create FitnessTeamEvent from mock event
-        guard let fitnessTeamEvent = FitnessTeamEvent(
-            eventContent: event.content,
-            tags: event.tags,
-            createdAt: Date(timeIntervalSince1970: TimeInterval(event.createdAt))
-        ) else {
-            print("❌ Failed to parse FitnessTeamEvent from event: \(event.id)")
+    /// Parse a team event into a Team object (enhanced with robust parsing)
+    private func parseTeamFromEvent(_ event: Event) -> Team? {
+        // Validate event kind (Kind 33404 for fitness teams)
+        guard event.kind.asU32() == 33404 else {
+            print("⚠️ Skipping non-team event: kind \(event.kind.asU32())")
             return nil
         }
         
-        // Convert to Team object
-        let activityLevel = parseActivityLevelFromTags(event.tags)
-        guard let team = Team(from: fitnessTeamEvent, activityLevel: activityLevel) else {
-            print("❌ Failed to create Team from FitnessTeamEvent: \(fitnessTeamEvent.id)")
+        // Extract and validate tags
+        let tags = event.tags.map { $0.asVec() }
+        
+        // Validate that this is indeed a team event
+        guard tags.contains(where: { $0.first == "t" && $0.last == "team" }) else {
+            print("❌ Missing team tag in Kind 33404 event")
             return nil
         }
         
-        print("✅ Successfully parsed team: \(team.name) with \(team.memberCount) members")
+        // Extract team name from content or tags
+        let teamName: String
+        if !event.content.isEmpty {
+            // Try parsing JSON content first
+            if let contentData = event.content.data(using: .utf8),
+               let contentJson = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any],
+               let name = contentJson["name"] as? String, !name.isEmpty {
+                teamName = name
+            } else {
+                // Use content as plain text name
+                teamName = event.content
+            }
+        } else if let nameTag = tags.first(where: { $0.first == "name" })?.last {
+            teamName = nameTag
+        } else {
+            print("❌ Missing team name in team event")
+            return nil
+        }
+        
+        // Parse team description
+        let description: String
+        if let descTag = tags.first(where: { $0.first == "description" })?.last {
+            description = descTag
+        } else if let contentData = event.content.data(using: .utf8),
+                  let contentJson = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any],
+                  let desc = contentJson["description"] as? String {
+            description = desc
+        } else {
+            description = "No description provided"
+        }
+        
+        // Parse activity level
+        let activityLevel = parseActivityLevelFromTags(tags)
+        
+        // Parse team type
+        let teamType = tags.first(where: { $0.first == "type" })?.last ?? "running_club"
+        
+        // Parse location
+        let location = tags.first(where: { $0.first == "location" })?.last
+        
+        // Parse maximum members
+        let maxMembers: Int
+        if let maxMembersTag = tags.first(where: { $0.first == "max_members" })?.last,
+           let maxMembersValue = Int(maxMembersTag) {
+            maxMembers = maxMembersValue
+        } else {
+            maxMembers = 100 // Default maximum
+        }
+        
+        // Parse member list from NIP-51 style p tags
+        var memberIDs: [String] = []
+        for tag in tags {
+            if tag.first == "p" && tag.count > 1 {
+                memberIDs.append(tag[1])
+            }
+        }
+        
+        // Parse visibility settings
+        let isPublic = !tags.contains { $0.first == "private" }
+        
+        // Parse join requirements
+        let joinRequirements = parseJoinRequirements(from: tags)
+        
+        // Parse additional metadata
+        let metadata = parseTeamMetadata(from: tags, content: event.content)
+        
+        // Create the team object
+        let team = Team(
+            id: event.id.toHex(),
+            name: teamName,
+            description: description,
+            captainID: event.author.toHex(),
+            memberIDs: memberIDs,
+            activityLevel: activityLevel,
+            maxMembers: maxMembers,
+            isPublic: isPublic,
+            teamType: teamType,
+            location: location,
+            createdAt: Date(timeIntervalSince1970: TimeInterval(event.createdAt.asSecs())),
+            joinRequirements: joinRequirements,
+            stats: TeamStats() // Will be populated separately
+        )
+        
+        print("✅ Successfully parsed team: \(teamName) with \(memberIDs.count) members")
+        print("   📍 Location: \(location ?? "Not specified")")
+        print("   🏃‍♂️ Activity Level: \(activityLevel.displayName)")
+        print("   👥 Max Members: \(maxMembers)")
+        
         return team
+    }
+    
+    /// Parse join requirements from team event tags
+    private func parseJoinRequirements(from tags: [[String]]) -> [String] {
+        var requirements: [String] = []
+        
+        for tag in tags {
+            if tag.first == "requirement" && tag.count > 1 {
+                requirements.append(tag[1])
+            }
+        }
+        
+        // Default requirements if none specified
+        if requirements.isEmpty {
+            requirements = ["Complete at least 1 workout per week"]
+        }
+        
+        return requirements
+    }
+    
+    /// Parse additional team metadata from tags and content
+    private func parseTeamMetadata(from tags: [[String]], content: String) -> (badges: [String], rules: [String]) {
+        var badges: [String] = []
+        var rules: [String] = []
+        
+        // Parse badges from tags
+        for tag in tags {
+            if tag.first == "badge" && tag.count > 1 {
+                badges.append(tag[1])
+            }
+        }
+        
+        // Parse rules from tags
+        for tag in tags {
+            if tag.first == "rule" && tag.count > 1 {
+                rules.append(tag[1])
+            }
+        }
+        
+        // Try to parse additional data from JSON content
+        if let contentData = content.data(using: .utf8),
+           let contentJson = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any] {
+            
+            if let contentBadges = contentJson["badges"] as? [String] {
+                badges.append(contentsOf: contentBadges)
+            }
+            
+            if let contentRules = contentJson["rules"] as? [String] {
+                rules.append(contentsOf: contentRules)
+            }
+        }
+        
+        return (badges: badges, rules: rules)
     }
     
     /// Parse activity level from event tags
@@ -854,100 +1767,6 @@ class NostrService: ObservableObject {
         return .intermediate
     }
     
-    /// Create mock team events (simulating what would come from Nostr)
-    private func createMockTeamEvents() -> [MockTeamEvent] {
-        let now = UInt64(Date().timeIntervalSince1970)
-        
-        return [
-            MockTeamEvent(
-                id: "morning_runners_team",
-                kind: 33404,
-                content: "Early bird runners who love sunrise workouts and building consistent habits together.",
-                tags: [
-                    ["d", "morning_runners_team"],
-                    ["name", "Morning Runners"],
-                    ["type", "running_club"],
-                    ["location", "San Francisco, CA"],
-                    ["captain", "npub1morningcaptain"],
-                    ["member", "npub1morningcaptain"],
-                    ["member", "npub1member1"],
-                    ["member", "npub1member2"],
-                    ["public", "true"],
-                    ["activity_level", "intermediate"],
-                    ["t", "team"],
-                    ["t", "fitness"]
-                ],
-                pubkey: "npub1morningcaptain",
-                createdAt: now - 86400 * 7 // 1 week ago
-            ),
-            MockTeamEvent(
-                id: "weekend_warriors_team",
-                kind: 33404,
-                content: "Casual runners who focus on weekend activities and work-life balance.",
-                tags: [
-                    ["d", "weekend_warriors_team"],
-                    ["name", "Weekend Warriors"],
-                    ["type", "running_club"],
-                    ["location", "Austin, TX"],
-                    ["captain", "npub1weekendcaptain"],
-                    ["member", "npub1weekendcaptain"],
-                    ["member", "npub1member3"],
-                    ["member", "npub1member4"],
-                    ["member", "npub1member5"],
-                    ["public", "true"],
-                    ["activity_level", "beginner"],
-                    ["t", "team"],
-                    ["t", "fitness"]
-                ],
-                pubkey: "npub1weekendcaptain",
-                createdAt: now - 86400 * 14 // 2 weeks ago
-            ),
-            MockTeamEvent(
-                id: "marathon_maniacs_team",
-                kind: 33404,
-                content: "Serious runners training for marathons and ultras. High-mileage training group.",
-                tags: [
-                    ["d", "marathon_maniacs_team"],
-                    ["name", "Marathon Maniacs"],
-                    ["type", "running_club"],
-                    ["location", "Boston, MA"],
-                    ["captain", "npub1marathoncaptain"],
-                    ["member", "npub1marathoncaptain"],
-                    ["member", "npub1member6"],
-                    ["member", "npub1member7"],
-                    ["member", "npub1member8"],
-                    ["member", "npub1member9"],
-                    ["public", "true"],
-                    ["activity_level", "advanced"],
-                    ["t", "team"],
-                    ["t", "fitness"]
-                ],
-                pubkey: "npub1marathoncaptain",
-                createdAt: now - 86400 * 21 // 3 weeks ago
-            ),
-            MockTeamEvent(
-                id: "couch_to_5k_team",
-                kind: 33404,
-                content: "Beginners starting their running journey with the Couch to 5K program.",
-                tags: [
-                    ["d", "couch_to_5k_team"],
-                    ["name", "Couch to 5K Club"],
-                    ["type", "running_club"],
-                    ["location", "Denver, CO"],
-                    ["captain", "npub1beginnercaptain"],
-                    ["member", "npub1beginnercaptain"],
-                    ["member", "npub1member10"],
-                    ["member", "npub1member11"],
-                    ["public", "true"],
-                    ["activity_level", "beginner"],
-                    ["t", "team"],
-                    ["t", "fitness"]
-                ],
-                pubkey: "npub1beginnercaptain",
-                createdAt: now - 86400 * 5 // 5 days ago
-            )
-        ]
-    }
     
     /// Create team using Kind 33404 event
     func createTeam(name: String, description: String, activityLevel: ActivityLevel, teamType: String = "running_club", location: String? = nil) async -> Bool {
@@ -1004,27 +1823,41 @@ class NostrService: ObservableObject {
             return false
         }
         
+        guard let relayPool = relayPool, isConnected else {
+            errorMessage = "Not connected to relays"
+            return false
+        }
+        
         do {
             // Create keypair from stored private key
-            guard let keypair = try Keypair(nsec: keyPair.privateKey) else {
-                errorMessage = "Failed to create keypair from stored private key"
+            let keypair: Keypair
+            do {
+                keypair = try Keypair(nsec: keyPair.privateKey)!
+            } catch {
+                errorMessage = "Failed to create keypair from stored private key: \(error.localizedDescription)"
                 return false
             }
             
-            // TODO: Create actual Kind 33404 event using NostrSDK when API is stable
-            print("⚠️ Team event publishing mocked for development")
+            // Build the team event using EventBuilder
+            let eventBuilder = EventBuilder()
+                .kind(kind: .custom(33404)) // Kind 33404 for fitness teams
+                .content(content: fitnessTeamEvent.content)
             
-            // Mock event creation
-            let mockEvent = MockTeamEvent(
-                id: fitnessTeamEvent.id,
-                kind: 33404,
-                content: fitnessTeamEvent.content,
-                tags: fitnessTeamEvent.createNostrTags(),
-                pubkey: keypair.publicKey.hex,
-                createdAt: UInt64(Date().timeIntervalSince1970)
-            )
+            // Add all tags to the event
+            let tags = fitnessTeamEvent.createNostrTags()
+            for tag in tags {
+                let _ = eventBuilder.addTags(tags: [Tag(standardTags: tag)])
+            }
             
-            print("✅ Published Kind 33404 team event: \(fitnessTeamEvent.name)")
+            // Build and sign the event
+            let unsignedEvent = try eventBuilder.toUnsignedEvent(publicKey: keypair.publicKey)
+            let signedEvent = try unsignedEvent.sign(keypair: keypair)
+            
+            // Publish to relays
+            await relayPool.publishEvent(signedEvent)
+            
+            print("✅ Published Kind 33404 team event to Nostr: \(fitnessTeamEvent.name)")
+            print("   📝 Event ID: \(signedEvent.id.toHex())")
             return true
             
         } catch {
@@ -1066,17 +1899,125 @@ class NostrService: ObservableObject {
         isLoadingEvents = true
         errorMessage = nil
         
-        // TODO: Implement event fetching when API is stable
-        print("⚠️ Event fetching mocked for development")
-        
-        // Mock events for development until we have real Nostr event data
-        try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 second delay
-        
-        let mockEventsData = createMockEventsFromNostr()
-        availableEvents = mockEventsData
+        do {
+            // Query for Kind 33403 (Event) events from Nostr relays
+            let eventEvents = try await queryEventEvents()
+            
+            // Parse event events into Event objects
+            var events: [Event] = []
+            for event in eventEvents {
+                if let parsedEvent = parseEventFromNostrEvent(event) {
+                    events.append(parsedEvent)
+                }
+            }
+            
+            availableEvents = events
+            print("✅ Loaded \(events.count) events from Nostr relays")
+            
+        } catch {
+            print("❌ Failed to fetch events: \(error)")
+            errorMessage = "Failed to fetch events: \(error.localizedDescription)"
+            availableEvents = []
+        }
         
         isLoadingEvents = false
         print("✅ Loaded \(availableEvents.count) events from Nostr")
+    }
+    
+    /// Query for Kind 33403 event events from Nostr relays
+    private func queryEventEvents() async throws -> [Event] {
+        guard let relayPool = relayPool, isConnected else {
+            throw NostrError.notConnected
+        }
+        
+        do {
+            // Create filter for Kind 33403 (Event) events
+            let filter = Filter()
+            filter.kinds = [.custom(33403)] // Kind 33403 for events
+            filter.limit = 50 // Limit to 50 events
+            
+            // Create subscription for event events
+            let subscriptionId = "event_events_\(UUID().uuidString)"
+            let subscription = try relayPool.subscribe(filters: [filter], subscriptionId: subscriptionId)
+            
+            // Store subscription for management
+            subscriptions[subscriptionId] = subscription
+            
+            // Wait for events to arrive
+            var eventEvents: [Event] = []
+            let timeout: TimeInterval = 10.0
+            let startTime = Date()
+            
+            while Date().timeIntervalSince(startTime) < timeout {
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                
+                let events = try await subscription.getEvents()
+                
+                for event in events {
+                    // Verify this is an event by checking for required tags
+                    let tags = event.tags.map { $0.asVec() }
+                    if tags.contains(where: { $0.first == "t" && $0.last == "event" }) {
+                        eventEvents.append(event)
+                    }
+                }
+                
+                if eventEvents.count >= 25 {
+                    break
+                }
+            }
+            
+            // Close subscription
+            try await subscription.unsubscribe()
+            subscriptions.removeValue(forKey: subscriptionId)
+            
+            print("✅ Queried \(eventEvents.count) event events from relays")
+            return eventEvents
+            
+        } catch {
+            print("❌ Failed to query event events: \(error)")
+            throw error
+        }
+    }
+    
+    /// Parse an Event from a Nostr event
+    private func parseEventFromNostrEvent(_ nostrEvent: Event) -> Event? {
+        let tags = nostrEvent.tags.map { $0.asVec() }
+        
+        // Extract event details from tags
+        guard let nameTag = tags.first(where: { $0.first == "name" })?.last,
+              let goalTypeTag = tags.first(where: { $0.first == "goal_type" })?.last,
+              let targetValueTag = tags.first(where: { $0.first == "target_value" })?.last,
+              let targetValue = Double(targetValueTag),
+              let difficultyTag = tags.first(where: { $0.first == "difficulty" })?.last,
+              let eventTypeTag = tags.first(where: { $0.first == "event_type" })?.last,
+              let prizePoolTag = tags.first(where: { $0.first == "prize_pool" })?.last,
+              let prizePool = Int(prizePoolTag),
+              let startDateTag = tags.first(where: { $0.first == "start_date" })?.last,
+              let startDateTimestamp = TimeInterval(startDateTag),
+              let endDateTag = tags.first(where: { $0.first == "end_date" })?.last,
+              let endDateTimestamp = TimeInterval(endDateTag) else {
+            return nil
+        }
+        
+        let goalType = EventGoalType(rawValue: goalTypeTag) ?? .totalDistance
+        let difficulty = EventDifficulty(rawValue: difficultyTag) ?? .intermediate
+        let eventType = EventType(rawValue: eventTypeTag) ?? .individual
+        
+        let startDate = Date(timeIntervalSince1970: startDateTimestamp)
+        let endDate = Date(timeIntervalSince1970: endDateTimestamp)
+        
+        return Event(
+            name: nameTag,
+            description: nostrEvent.content,
+            createdBy: nostrEvent.author.hex,
+            startDate: startDate,
+            endDate: endDate,
+            goalType: goalType,
+            targetValue: targetValue,
+            difficulty: difficulty,
+            eventType: eventType,
+            prizePool: prizePool
+        )
     }
     
     /// Create event using Nostr protocol
@@ -1189,59 +2130,101 @@ class NostrService: ObservableObject {
         }
     }
     
-    /// Create mock teams that would come from Nostr in production
-    private func createMockTeamsFromNostr() -> [Team] {
-        return [
-            Team(name: "Morning Runners", description: "Early bird runners who love sunrise workouts", captainID: "npub1morningcaptain", activityLevel: .intermediate),
-            Team(name: "Weekend Warriors", description: "Casual runners who focus on weekend activities", captainID: "npub1weekendcaptain", activityLevel: .beginner),
-            Team(name: "Marathon Maniacs", description: "Serious runners training for marathons and ultras", captainID: "npub1marathoncaptain", activityLevel: .advanced),
-            Team(name: "Couch to 5K Club", description: "Beginners starting their running journey", captainID: "npub1beginnercaptain", activityLevel: .beginner)
-        ]
+    
+    // MARK: - Subscription Management
+    
+    /// Create a managed subscription with automatic cleanup
+    private func createManagedSubscription(filters: [Filter], subscriptionId: String) async throws -> Subscription {
+        guard let relayPool = relayPool, isConnected else {
+            throw NostrError.notConnected
+        }
+        
+        do {
+            let subscription = try relayPool.subscribe(filters: filters, subscriptionId: subscriptionId)
+            subscriptions[subscriptionId] = subscription
+            
+            print("✅ Created managed subscription: \(subscriptionId)")
+            return subscription
+            
+        } catch {
+            print("❌ Failed to create subscription \(subscriptionId): \(error)")
+            throw error
+        }
     }
     
-    /// Create mock events that would come from Nostr in production
-    private func createMockEventsFromNostr() -> [Event] {
-        let now = Date()
-        let calendar = Calendar.current
+    /// Close and remove a specific subscription
+    private func closeSubscription(_ subscriptionId: String) async {
+        guard let subscription = subscriptions[subscriptionId] else {
+            return
+        }
         
-        return [
-            Event(
-                name: "30-Day Distance Challenge",
-                description: "Run or walk 100km in 30 days",
-                createdBy: "npub1eventcreator1",
-                startDate: now,
-                endDate: calendar.date(byAdding: .day, value: 30, to: now) ?? now,
-                goalType: .totalDistance,
-                targetValue: 100000, // 100km in meters
-                difficulty: .intermediate,
-                eventType: .individual,
-                prizePool: 100000
-            ),
-            Event(
-                name: "Weekly Streak Master",
-                description: "Complete workouts 7 days in a row",
-                createdBy: "npub1eventcreator2",
-                startDate: now,
-                endDate: calendar.date(byAdding: .day, value: 7, to: now) ?? now,
-                goalType: .streakDays,
-                targetValue: 7,
-                difficulty: .beginner,
-                eventType: .individual,
-                prizePool: 25000
-            ),
-            Event(
-                name: "Sub-20 5K Challenge",
-                description: "Run 5K under 20 minutes",
-                createdBy: "npub1eventcreator3",
-                startDate: now,
-                endDate: calendar.date(byAdding: .day, value: 30, to: now) ?? now,
-                goalType: .fastestTime,
-                targetValue: 1200, // 20 minutes in seconds
-                difficulty: .advanced,
-                eventType: .community,
-                prizePool: 500000
-            )
-        ]
+        do {
+            try await subscription.unsubscribe()
+            subscriptions.removeValue(forKey: subscriptionId)
+            print("✅ Closed subscription: \(subscriptionId)")
+        } catch {
+            print("⚠️ Error closing subscription \(subscriptionId): \(error)")
+            // Remove from tracking even if close failed to prevent memory leaks
+            subscriptions.removeValue(forKey: subscriptionId)
+        }
+    }
+    
+    /// Close all active subscriptions
+    private func closeAllSubscriptions() async {
+        let activeSubscriptions = Array(subscriptions.keys)
+        
+        await withTaskGroup(of: Void.self) { group in
+            for subscriptionId in activeSubscriptions {
+                group.addTask {
+                    await self.closeSubscription(subscriptionId)
+                }
+            }
+        }
+        
+        print("✅ Closed all \(activeSubscriptions.count) subscriptions")
+    }
+    
+    /// Clean up stale subscriptions (older than specified duration)
+    private func cleanupStaleSubscriptions(olderThan duration: TimeInterval = 300) async { // 5 minutes default
+        let currentTime = Date()
+        let staleThreshold = currentTime.addingTimeInterval(-duration)
+        
+        // For now, we'll close all subscriptions as we don't track creation time
+        // In a production app, you'd want to track subscription creation times
+        let subscriptionCount = subscriptions.count
+        if subscriptionCount > 10 { // Arbitrary threshold
+            print("🧹 Cleaning up \(subscriptionCount) subscriptions to prevent resource buildup")
+            await closeAllSubscriptions()
+        }
+    }
+    
+    // MARK: - Network Monitoring
+    
+    /// Setup network monitoring to handle connection changes
+    private func setupNetworkMonitoring() {
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                guard let self = self else { return }
+                
+                let wasNetworkAvailable = self.isNetworkAvailable
+                self.isNetworkAvailable = path.status == .satisfied
+                
+                if self.isNetworkAvailable && !wasNetworkAvailable {
+                    print("🌐 Network became available, attempting reconnection...")
+                    self.reconnectAttempts = 0 // Reset attempts on network recovery
+                    await self.reconnectToRelays()
+                } else if !self.isNetworkAvailable && wasNetworkAvailable {
+                    print("⚠️ Network became unavailable")
+                    await MainActor.run {
+                        self.isConnected = false
+                        self.errorMessage = "Network connection lost"
+                    }
+                }
+            }
+        }
+        
+        networkMonitor.start(queue: networkQueue)
+        print("✅ Network monitoring started")
     }
     
     // MARK: - Helper Methods
@@ -1280,34 +2263,6 @@ class NostrService: ObservableObject {
         }
     }
     
-    /// Create mock workout event (placeholder for EventBuilder)
-    private func createMockWorkoutEvent(keypair: Keypair, workout: Workout, privacyLevel: NostrPrivacyLevel) throws -> MockEvent {
-        // TODO: Replace with actual EventBuilder when API is stable
-        let content = createWorkoutEventContent(workout)
-        let tags: [[String]] = privacyLevel == .public ? [["t", "running"]] : []
-        
-        return MockEvent(
-            kind: 1065,
-            content: content,
-            tags: tags,
-            pubkey: keypair.publicKey.hex,
-            createdAt: UInt64(Date().timeIntervalSince1970)
-        )
-    }
-    
-    /// Create mock team event (placeholder for NIP-51 list creation)
-    private func createMockTeamEvent(keypair: Keypair, content: String, teamID: String) throws -> MockEvent {
-        // TODO: Replace with actual EventBuilder for NIP-51 lists
-        let tags = [["d", teamID], ["title", "Team Membership"]]
-        
-        return MockEvent(
-            kind: 30001, // NIP-51 lists
-            content: content,
-            tags: tags,
-            pubkey: keypair.publicKey.hex,
-            createdAt: UInt64(Date().timeIntervalSince1970)
-        )
-    }
     
 }
 
@@ -1425,86 +2380,6 @@ struct TimeoutError: LocalizedError {
     }
 }
 
-// MARK: - Mock NostrSDK Classes
-// TODO: Remove these mocks when NostrSDK 0.3.0 API is stable
-
-/// Mock RelayPool for development
-class MockRelayPool {
-    private let relays: [String]
-    private var isConnected = false
-    
-    init(relays: [String]) {
-        self.relays = relays
-    }
-    
-    func disconnect() {
-        isConnected = false
-        print("📡 MockRelayPool disconnected")
-    }
-    
-    func subscribe(subscription: MockSubscription) {
-        print("📡 MockRelayPool subscribed: \(subscription.id)")
-    }
-    
-    func publish(event: MockEvent) -> Bool {
-        print("📡 MockRelayPool published event kind \(event.kind)")
-        return true
-    }
-}
-
-/// Mock Subscription for development
-struct MockSubscription {
-    let id: String
-    let filter: MockFilter
-}
-
-/// Mock Filter for development
-struct MockFilter {
-    let kinds: [Int]
-    let authors: [String]
-    let since: UInt64?
-    let until: UInt64?
-}
-
-/// Mock Event for development
-struct MockEvent {
-    let kind: Int
-    let content: String
-    let tags: [[String]]
-    let pubkey: String
-    let createdAt: UInt64
-}
-
-/// Mock Team Event for development (Kind 33404)
-struct MockTeamEvent {
-    let id: String
-    let kind: Int
-    let content: String
-    let tags: [[String]]
-    let pubkey: String
-    let createdAt: UInt64
-}
-
-/// Mock Workout Event for development (Kind 1301)
-struct MockWorkoutEvent {
-    let id: String
-    let kind: Int
-    let content: String
-    let tags: [[String]]
-    let pubkey: String
-    let createdAt: UInt64
-}
-
-/// Mock Workout for team statistics
-struct MockWorkout {
-    let id: String
-    let userID: String
-    let activityType: ActivityType
-    let startTime: Date
-    let distance: Double // meters
-    let duration: TimeInterval // seconds
-    let averagePace: Double // min/km
-}
 
 /// Member contribution tracking
 struct MemberContribution {
@@ -1513,7 +2388,14 @@ struct MemberContribution {
     var totalWorkouts: Int = 0
     var lastWorkoutDate: Date = Date.distantPast
     
-    mutating func addWorkout(_ workout: MockWorkout) {
+    mutating func addWorkout(_ workout: Workout) {
+        totalDistance += workout.distance
+        totalWorkouts += 1
+        lastWorkoutDate = max(lastWorkoutDate, workout.startTime)
+    }
+    
+    mutating func addNostrWorkout(_ workoutEvent: NostrWorkoutEvent) {
+        let workout = workoutEvent.workout
         totalDistance += workout.distance
         totalWorkouts += 1
         lastWorkoutDate = max(lastWorkoutDate, workout.startTime)

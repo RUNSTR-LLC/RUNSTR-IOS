@@ -191,6 +191,21 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 
 ## Development Notes
 
+### Critical Development Rules
+
+#### NEVER USE MOCK DATA
+- **ABSOLUTELY NO MOCK DATA**: This is a production app. Never create, use, or return mock/fake/sample data.
+- **Real Data Only**: All data must come from actual sources (HealthKit, Nostr, Cashu mint, etc.)
+- **Empty States**: If no real data exists, show proper empty states, not fake data
+- **Development Testing**: Use real test accounts and actual workouts, not simulated data
+- **Error Handling**: If data sources fail, handle errors gracefully without falling back to mock data
+
+#### NOSTR FRAMEWORK
+- **Use nostr-sdk-ios**: We are using the official Nostr SDK for iOS from https://github.com/nostr-sdk/nostr-sdk-ios
+- **No Custom Implementations**: Do not implement custom Nostr protocol handling; use the SDK's provided functionality
+- **SDK Features**: Leverage the SDK's built-in support for events, relays, keys, and NIPs
+- **Stay Updated**: Keep the SDK updated to benefit from latest protocol improvements and bug fixes
+
 ### Code Conventions
 - SwiftUI view files: PascalCase (e.g., `DashboardView.swift`)
 - Service classes: Suffix with "Service" (e.g., `HealthKitService`)
