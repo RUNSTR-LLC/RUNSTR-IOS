@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import NostrSDK
 
 /// Manages NIP-46 connection lifecycle and state coordination
 /// Acts as a lightweight coordinator between UI and NIP46Client
@@ -104,7 +105,7 @@ class NIP46ConnectionManager: ObservableObject {
     }
     
     /// Handle connection state changes
-    private func handleConnectionStateChange(_ state: NIP46Client.ConnectionState) {
+    private func handleConnectionStateChange(_ state: NIP46ConnectionState) {
         switch state {
         case .disconnected:
             isConnected = false

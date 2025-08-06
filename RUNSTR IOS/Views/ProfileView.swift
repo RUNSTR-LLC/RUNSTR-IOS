@@ -1,8 +1,8 @@
 import SwiftUI
 
-struct TeamsView: View {
+struct ProfileView: View {
     @EnvironmentObject var authService: AuthenticationService
-    @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var healthKitService: HealthKitService
     @State private var showingSettings = false
     
     var body: some View {
@@ -15,7 +15,7 @@ struct TeamsView: View {
                 
                 // Coming Soon message
                 VStack(spacing: RunstrSpacing.md) {
-                    Image(systemName: "person.3.fill")
+                    Image(systemName: "person.circle.fill")
                         .font(.system(size: 60))
                         .foregroundColor(.runstrGray)
                     
@@ -23,7 +23,7 @@ struct TeamsView: View {
                         .font(.runstrTitle)
                         .foregroundColor(.runstrWhite)
                     
-                    Text("Teams and group challenges will appear here")
+                    Text("Your profile and achievements will appear here")
                         .font(.runstrCaption)
                         .foregroundColor(.runstrGray)
                         .multilineTextAlignment(.center)
@@ -72,7 +72,7 @@ struct TeamsView: View {
 }
 
 #Preview {
-    TeamsView()
+    ProfileView()
         .environmentObject(AuthenticationService())
-        .environmentObject(NostrService())
+        .environmentObject(HealthKitService())
 }

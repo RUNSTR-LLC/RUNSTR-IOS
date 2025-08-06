@@ -48,6 +48,23 @@ struct User: Codable, Identifiable {
         self.loginMethod = .nostr
     }
     
+    // nsec bunker login initializer
+    init(bunkerPublicKey: String, authenticationMethod: LoginMethod, connectionManager: NIP46ConnectionManager) {
+        self.id = UUID().uuidString
+        self.appleUserID = nil
+        self.email = nil
+        // For nsec bunker, we don't store private keys locally - signing is remote
+        self.runstrNostrPublicKey = bunkerPublicKey
+        self.runstrNostrPrivateKey = "" // Empty since we use remote signing
+        self.mainNostrPublicKey = bunkerPublicKey
+        self.isDelegatedSigning = true // nsec bunker is inherently "delegated" signing
+        self.subscriptionTier = .none
+        self.createdAt = Date()
+        self.profile = UserProfile()
+        self.stats = UserStats()
+        self.loginMethod = authenticationMethod
+    }
+    
     // Get display npub (main if linked, otherwise RUNSTR-generated)
     var displayNostrPublicKey: String {
         return mainNostrPublicKey ?? runstrNostrPublicKey
@@ -96,6 +113,7 @@ struct User: Codable, Identifiable {
 enum LoginMethod: String, Codable {
     case apple
     case nostr
+    case nsecBunker // NIP-46 remote signing
     case email // Future implementation
 }
 

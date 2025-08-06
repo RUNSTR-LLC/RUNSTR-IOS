@@ -7,6 +7,7 @@ struct WalletView: View {
     @State private var showingFundingOptions = false
     @State private var showingCashuSend = false
     @State private var showingCashuReceive = false
+    @State private var showingCashuWithdraw = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +32,9 @@ struct WalletView: View {
         }
         .sheet(isPresented: $showingCashuReceive) {
             CashuReceiveView()
+        }
+        .sheet(isPresented: $showingCashuWithdraw) {
+            CashuWithdrawView()
         }
         .sheet(isPresented: $showingFundingOptions) {
             Text("Funding options coming soon")
@@ -119,7 +123,7 @@ struct WalletView: View {
                 icon: "bolt.circle.fill",
                 color: .blue
             ) {
-                showingFundingOptions = true
+                showingCashuWithdraw = true
             }
         }
     }
@@ -133,7 +137,7 @@ struct WalletView: View {
                 Spacer()
             }
             
-            if cashuService.balance == 0 {
+            if cashuService.pendingOperations.isEmpty && cashuService.balance == 0 {
                 VStack(spacing: 16) {
                     Image(systemName: "bitcoinsign.circle")
                         .font(.system(size: 48))
@@ -151,10 +155,16 @@ struct WalletView: View {
                 .padding(.vertical, 40)
             } else {
                 LazyVStack(spacing: 1) {
-                    Text("Transaction history coming soon")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.gray)
-                        .padding(.vertical, 40)
+                    ForEach(cashuService.pendingOperations.reversed()) { operation in
+                        CashuOperationRow(operation: operation)
+                    }
+                    
+                    if cashuService.pendingOperations.isEmpty {
+                        Text("All caught up!")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.gray)
+                            .padding(.vertical, 20)
+                    }
                 }
             }
         }
@@ -205,6 +215,86 @@ struct WalletActionButton: View {
                     .stroke(Color.white.opacity(0.1), lineWidth: 1)
             )
         }
+    }
+}
+
+struct CashuOperationRow: View {
+    let operation: CashuOperation
+    
+    private var operationIcon: String {
+        switch operation.type {
+        case .mint: return "plus.circle.fill"
+        case .melt: return "bolt.circle.fill"
+        case .send: return "arrow.up.circle.fill"
+        case .receive: return "arrow.down.circle.fill"
+        }
+    }
+    
+    private var operationColor: Color {
+        switch operation.type {
+        case .mint, .receive: return .green
+        case .melt, .send: return operation.status == .failed ? .red : .orange
+        }
+    }
+    
+    private var operationTitle: String {
+        switch operation.type {
+        case .mint: return "Mint Tokens"
+        case .melt: return "Lightning Withdrawal"
+        case .send: return "Send Tokens"
+        case .receive: return "Receive Tokens"
+        }
+    }
+    
+    private var statusColor: Color {
+        switch operation.status {
+        case .pending: return .yellow
+        case .completed: return .green
+        case .failed: return .red
+        }
+    }
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            Image(systemName: operationIcon)
+                .foregroundColor(operationColor)
+                .font(.system(size: 20))
+                .frame(width: 24, height: 24)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(operationTitle)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white)
+                
+                Text(DateFormatter.localizedString(from: operation.timestamp, dateStyle: .short, timeStyle: .short))
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(.gray)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("\(operation.type == .send || operation.type == .melt ? "-" : "+")\(operation.amount) sats")
+                    .font(.system(size: 16, weight: .medium, design: .monospaced))
+                    .foregroundColor(operationColor)
+                
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 8, height: 8)
+                    
+                    Text(operation.status == .pending ? "Pending" : operation.status == .completed ? "Complete" : "Failed")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundColor(.gray)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            Rectangle()
+                .fill(Color.white.opacity(0.02))
+        )
     }
 }
 

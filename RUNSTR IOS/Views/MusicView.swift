@@ -1,39 +1,38 @@
 import SwiftUI
 
-struct TeamsView: View {
-    @EnvironmentObject var authService: AuthenticationService
-    @EnvironmentObject var nostrService: NostrService
+struct MusicView: View {
     @State private var showingSettings = false
     
     var body: some View {
         NavigationView {
-            VStack {
-                // Header with activity selector and settings
-                headerSection
-                
-                Spacer()
-                
-                // Coming Soon message
-                VStack(spacing: RunstrSpacing.md) {
-                    Image(systemName: "person.3.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.runstrGray)
+            ScrollView {
+                VStack(spacing: RunstrSpacing.lg) {
+                    // Header with activity selector and settings
+                    headerSection
                     
-                    Text("Coming Soon")
-                        .font(.runstrTitle)
-                        .foregroundColor(.runstrWhite)
+                    // Music content placeholder
+                    VStack(spacing: RunstrSpacing.md) {
+                        Text("Music")
+                            .font(.runstrTitle)
+                            .foregroundColor(.runstrWhite)
+                        
+                        Text("Coming Soon")
+                            .font(.runstrBody)
+                            .foregroundColor(.runstrGray)
+                        
+                        Text("Integrated music player for your workouts")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGrayLight)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(RunstrSpacing.xl)
+                    .runstrCard()
                     
-                    Text("Teams and group challenges will appear here")
-                        .font(.runstrCaption)
-                        .foregroundColor(.runstrGray)
-                        .multilineTextAlignment(.center)
+                    Spacer(minLength: 100) // Bottom padding for tab bar
                 }
-                .padding(.horizontal, RunstrSpacing.xl)
-                
-                Spacer()
+                .padding(.horizontal, RunstrSpacing.md)
+                .padding(.top, RunstrSpacing.md)
             }
-            .padding(.horizontal, RunstrSpacing.md)
-            .padding(.top, RunstrSpacing.md)
             .background(Color.runstrBackground)
             .navigationBarHidden(true)
         }
@@ -72,7 +71,5 @@ struct TeamsView: View {
 }
 
 #Preview {
-    TeamsView()
-        .environmentObject(AuthenticationService())
-        .environmentObject(NostrService())
+    MusicView()
 }

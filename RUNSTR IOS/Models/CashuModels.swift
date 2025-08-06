@@ -102,6 +102,72 @@ struct CashuMeltQuote: Codable {
     let state: String?
 }
 
+/// Melt quote request
+struct CashuMeltQuoteRequest: Codable {
+    let unit: String
+    let request: String // Lightning invoice
+}
+
+/// Input for melt operation
+struct CashuInput: Codable {
+    let amount: Int
+    let secret: String
+    let C: String
+}
+
+/// Melt request with inputs
+struct CashuMeltRequest: Codable {
+    let quote: String
+    let inputs: [CashuInput]
+}
+
+/// Melt response
+struct CashuMeltResponse: Codable {
+    let paid: Bool
+    let payment_preimage: String?
+    let change: [CashuBlindedSignature]?
+}
+
+/// Check state request for token verification
+struct CashuCheckStateRequest: Codable {
+    let secrets: [String]
+}
+
+/// Token state information
+struct CashuTokenState: Codable {
+    let secret: String
+    let state: String // "UNSPENT", "SPENT", "PENDING"
+    let witness: String?
+}
+
+/// Check state response
+struct CashuCheckStateResponse: Codable {
+    let states: [CashuTokenState]
+}
+
+// MARK: - Cashu Token V4 Format
+
+/// Cashu token proof for v4 format
+struct CashuTokenProof: Codable {
+    let amount: Int
+    let secret: String
+    let C: String
+    let id: String // Keyset ID
+}
+
+/// Cashu token entry for v4 format
+struct CashuTokenEntry: Codable {
+    let mint: String
+    let proofs: [CashuTokenProof]
+}
+
+/// Cashu token v4 structure (NUT-00)
+struct CashuTokenV4: Codable {
+    let token: [CashuTokenEntry]
+    let memo: String?
+    let unit: String
+}
+
 /// Operation tracking for pending transactions
 struct CashuOperation: Identifiable {
     let id: String
@@ -134,6 +200,7 @@ enum CashuError: Error, LocalizedError {
     case keychainError
     case cryptographicError
     case networkError
+    case meltFailed
     
     var errorDescription: String? {
         switch self {
@@ -153,6 +220,8 @@ enum CashuError: Error, LocalizedError {
             return "Cryptographic operation failed"
         case .networkError:
             return "Network connection error"
+        case .meltFailed:
+            return "Lightning payment failed"
         }
     }
 }

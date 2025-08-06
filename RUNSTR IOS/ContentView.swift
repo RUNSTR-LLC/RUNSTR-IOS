@@ -22,53 +22,6 @@ struct ContentView: View {
     }
 }
 
-struct MainTabView: View {
-    init() {
-        // Customize tab bar appearance
-        let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor.black
-        
-        // Customize tab bar item appearance
-        appearance.stackedLayoutAppearance.normal.iconColor = UIColor.gray
-        appearance.stackedLayoutAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.gray]
-        appearance.stackedLayoutAppearance.selected.iconColor = UIColor.white
-        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.white]
-        
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
-    }
-    
-    var body: some View {
-        TabView {
-            DashboardView()
-                .tabItem {
-                    Image(systemName: "house")
-                    Text("Dashboard")
-                }
-            
-            StatsView()
-                .tabItem {
-                    Image(systemName: "person.circle")
-                    Text("Profile")
-                }
-            
-            EventsView()
-                .tabItem {
-                    Image(systemName: "calendar")
-                    Text("Events")
-                }
-            
-            TeamsView()
-                .tabItem {
-                    Image(systemName: "person.3")
-                    Text("Teams")
-                }
-        }
-        .accentColor(.white)
-    }
-}
-
 #Preview {
     ContentView()
         .environmentObject(AuthenticationService())

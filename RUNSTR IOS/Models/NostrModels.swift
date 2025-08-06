@@ -15,8 +15,8 @@ struct NostrKeyPair: Codable {
                 throw NSError(domain: "NostrKeyPair", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create keypair"])
             }
             
-            let publicKey = keypair.publicKey.bech32
-            let privateKey = keypair.secretKey.bech32
+            let publicKey = keypair.publicKey.npub
+            let privateKey = keypair.privateKey.nsec
             
             return NostrKeyPair(
                 privateKey: privateKey,
@@ -29,8 +29,8 @@ struct NostrKeyPair: Codable {
                 guard let fallbackKeypair = try Keypair() else {
                     fatalError("Unable to generate Nostr keys - this is a critical error")
                 }
-                let publicKey = fallbackKeypair.publicKey.bech32
-                let privateKey = fallbackKeypair.secretKey.bech32
+                let publicKey = fallbackKeypair.publicKey.npub
+                let privateKey = fallbackKeypair.privateKey.nsec
                 
                 return NostrKeyPair(
                     privateKey: privateKey,

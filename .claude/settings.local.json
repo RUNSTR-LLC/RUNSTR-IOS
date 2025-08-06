@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(find:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(swift:*)",
+      "Bash(xcodebuild:*)"
     ],
     "deny": []
   }

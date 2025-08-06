@@ -194,9 +194,17 @@ struct NostrAdvancedSettingsView: View {
             
             VStack(spacing: 12) {
                 if let mainNpub = nostrService.mainNostrPublicKey {
+                    let subtitle = if let nip46Manager = nostrService.nip46ConnectionManager {
+                        nip46Manager.isConnected ? "Connected via nsec bunker" : "nsec bunker disconnected"
+                    } else if nostrService.isDelegatedSigning {
+                        "Linked with delegation"
+                    } else {
+                        "Linked"
+                    }
+                    
                     NostrKeyCard(
                         title: "Main Identity",
-                        subtitle: nostrService.isDelegatedSigning ? "Linked with delegation" : "Linked",
+                        subtitle: subtitle,
                         publicKey: mainNpub,
                         isMain: true
                     )

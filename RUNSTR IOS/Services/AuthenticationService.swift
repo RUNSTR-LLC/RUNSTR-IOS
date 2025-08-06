@@ -6,59 +6,115 @@ class AuthenticationService: NSObject, ObservableObject {
     @Published var isAuthenticated = false
     @Published var currentUser: User?
     @Published var isLoading = false
+    @Published var nip46ConnectionManager: NIP46ConnectionManager?
     
     private let keychainService = "app.runstr.keychain"
+    
+    // Reference to NostrService for connection setup
+    weak var nostrService: NostrService?
     
     override init() {
         super.init()
         checkAuthenticationStatus()
     }
     
+    /// Configure NostrService reference for NIP-46 integration
+    func configureNostrService(_ service: NostrService) {
+        nostrService = service
+    }
+    
     func signInWithApple() {
-        print("🚀 Using mock Apple Sign-In for development")
+        print("🚀 Starting production Apple Sign-In")
         isLoading = true
         
-        // Mock authentication for development (remove when you have paid Apple Developer account)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.createMockUser()
+        // Use real Apple Sign-In flow
+        let appleIDProvider = ASAuthorizationAppleIDProvider()
+        let request = appleIDProvider.createRequest()
+        request.requestedScopes = [.fullName, .email]
+        
+        let authorizationController = ASAuthorizationController(authorizationRequests: [request])
+        authorizationController.delegate = self
+        authorizationController.presentationContextProvider = self
+        authorizationController.performRequests()
+    }
+    
+    func signInWithNsecBunker() async {
+        print("🚀 Starting nsec bunker sign-in")
+        isLoading = true
+        
+        do {
+            // Initialize NIP-46 connection manager on MainActor
+            let connectionManager = await NIP46ConnectionManager()
+            await MainActor.run {
+                nip46ConnectionManager = connectionManager
+            }
+            
+            // Attempt connection to nsec bunker
+            await connectionManager.connect()
+            
+            // Check if connection was successful
+            if await connectionManager.isConnected {
+                await createNsecBunkerUser(connectionManager: connectionManager)
+            } else {
+                throw AuthenticationError.nsecBunkerConnectionFailed
+            }
+            
+        } catch {
+            print("❌ nsec bunker sign-in failed: \(error)")
+            await MainActor.run {
+                self.isLoading = false
+                // Handle error appropriately in UI
+            }
         }
     }
     
     func signInWithNostr(npub: String) {
-        print("🚀 Starting Nostr Sign-In with npub: \(npub)")
+        print("🚀 Starting legacy Nostr Sign-In with npub: \(npub)")
         isLoading = true
         
-        // Mock implementation - in production, fetch user profile from Nostr relays
+        // Legacy implementation for manual npub input
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.createNostrUser(mainNpub: npub)
         }
     }
     
-    private func createMockUser() {
-        print("✅ Creating mock user for development")
+    
+    private func createNsecBunkerUser(connectionManager: NIP46ConnectionManager) async {
+        print("✅ Creating nsec bunker user")
         
-        let nostrKeys = NostrKeyPair.generate()
-        print("✅ Nostr keys generated")
+        let connectionInfo = await connectionManager.getConnectionInfo()
         
-        saveNostrKeysToKeychain(nostrKeys)
-        print("✅ Nostr keys saved to keychain")
+        guard let bunkerPublicKey = connectionInfo.publicKey else {
+            print("❌ No bunker public key available")
+            await MainActor.run {
+                self.isLoading = false
+            }
+            return
+        }
         
+        // Create user with nsec bunker connection
         let user = User(
-            appleUserID: "mock_user_\(UUID().uuidString.prefix(8))",
-            email: "test@runstr.app",
-            nostrKeys: nostrKeys
+            bunkerPublicKey: bunkerPublicKey,
+            authenticationMethod: .nsecBunker,
+            connectionManager: connectionManager
         )
-        print("✅ Mock user object created")
+        
+        print("✅ nsec bunker user object created")
         
         saveUserToKeychain(user)
-        print("✅ Mock user saved to keychain")
+        print("✅ nsec bunker user saved to keychain")
         
-        DispatchQueue.main.async {
-            print("✅ Setting authentication state")
+        // Configure NostrService with NIP-46 connection manager
+        if let nostrService = nostrService {
+            await nostrService.setNIP46ConnectionManager(connectionManager)
+        }
+        
+        await MainActor.run {
+            print("✅ Setting nsec bunker authentication state")
             self.currentUser = user
             self.isAuthenticated = true
             self.isLoading = false
-            print("✅ Mock authentication complete - isAuthenticated: \(self.isAuthenticated)")
+            print("✅ nsec bunker authentication complete - isAuthenticated: \(self.isAuthenticated)")
         }
     }
     
@@ -238,6 +294,25 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
         print("Sign in with Apple failed: \(error.localizedDescription)")
         DispatchQueue.main.async {
             self.isLoading = false
+        }
+    }
+}
+
+// MARK: - Authentication Errors
+
+enum AuthenticationError: LocalizedError {
+    case nsecBunkerConnectionFailed
+    case invalidBunkerResponse
+    case userCreationFailed
+    
+    var errorDescription: String? {
+        switch self {
+        case .nsecBunkerConnectionFailed:
+            return "Failed to connect to nsec bunker"
+        case .invalidBunkerResponse:
+            return "Invalid response from nsec bunker"
+        case .userCreationFailed:
+            return "Failed to create user account"
         }
     }
 }

@@ -482,13 +482,7 @@ class StatsService: ObservableObject {
 
 // MARK: - Extensions
 
-extension NostrService {
-    func fetchWorkoutEvents(for npub: String, timeframe: TimeFrame) async -> [NostrWorkoutEvent] {
-        // This method needs to be implemented in NostrService
-        // For now, return empty array as placeholder
-        return []
-    }
-}
+// Note: fetchWorkoutEvents method is implemented in NostrService.swift
 
 // MARK: - Errors
 

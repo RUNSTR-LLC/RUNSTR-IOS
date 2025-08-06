@@ -61,14 +61,34 @@ struct OnboardingView: View {
                         .cornerRadius(2)
                     }
                     
-                    // Nostr Sign-In Button
+                    // nsec bunker Sign-In Button (Primary Nostr option)
+                    Button {
+                        Task {
+                            await authService.signInWithNsecBunker()
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "key.radiowaves.forward")
+                                .font(.title3)
+                            Text("Continue with nsec bunker")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color.orange)
+                        .cornerRadius(2)
+                    }
+                    .disabled(authService.isLoading)
+                    
+                    // Legacy Nostr Sign-In Button
                     Button {
                         showingNostrLogin = true
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "link")
                                 .font(.title3)
-                            Text("Continue with Nostr")
+                            Text("Continue with npub")
                                 .font(.system(size: 16, weight: .medium))
                         }
                         .foregroundColor(.white)
@@ -136,11 +156,11 @@ struct NostrLoginView: View {
                         .font(.system(size: 60))
                         .foregroundColor(.white)
                     
-                    Text("Connect Your Nostr Identity")
+                    Text("Manual Nostr Connection")
                         .font(.system(size: 24, weight: .bold))
                         .foregroundColor(.white)
                     
-                    Text("Enter your npub to link your existing Nostr identity with RUNSTR")
+                    Text("Enter your npub for legacy Nostr integration. For better security, use nsec bunker instead.")
                         .font(.system(size: 16, weight: .regular))
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)

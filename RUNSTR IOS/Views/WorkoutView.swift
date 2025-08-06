@@ -11,6 +11,11 @@ struct WorkoutView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var cashuService: CashuService
     @EnvironmentObject var streakService: StreakService
+    @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var workoutStorage: WorkoutStorage
+    
+    @State private var showingSummary = false
+    @State private var completedWorkout: Workout?
     
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
@@ -48,13 +53,31 @@ struct WorkoutView: View {
             .foregroundColor(.white)
         }
         .onAppear {
+            print("🏃 WorkoutView appeared with activity type: \(activityType.displayName)")
+            
+            // Configure WorkoutSession with required services
+            workoutSession.configure(healthKitService: healthKitService, locationService: locationService)
+            
             if !workoutSession.isActive {
+                print("🏃 Starting workout session...")
                 startWorkout()
+            } else {
+                print("🏃 Workout session already active")
             }
         }
         .onChange(of: locationService.currentLocation) { _, location in
             if let location = location {
                 region.center = location.coordinate
+            }
+        }
+        .fullScreenCover(isPresented: $showingSummary) {
+            if let workout = completedWorkout {
+                WorkoutSummaryView(workout: workout)
+                    .environmentObject(workoutStorage)
+                    .onDisappear {
+                        // When summary is dismissed, dismiss the workout view too
+                        dismiss()
+                    }
             }
         }
     }
@@ -190,7 +213,10 @@ struct WorkoutView: View {
     }
     
     private func startWorkout() {
-        guard let userID = authService.currentUser?.id else { return }
+        // Use a test user ID if no user is logged in
+        let userID = authService.currentUser?.id ?? "test-user-123"
+        
+        print("🎯 Starting workout with userID: \(userID)")
         
         Task {
             locationService.startTracking()
@@ -225,13 +251,15 @@ struct WorkoutView: View {
                 await awardWorkoutReward(for: completedWorkout)
                 
                 // 3. Create Nostr event (if connected)
-                // TODO: Implement Nostr event publishing
+                await publishWorkoutToNostr(completedWorkout)
                 
-                // 4. Update user stats
-                // TODO: Update user statistics
+                // 4. Store completed workout and show summary
+                self.completedWorkout = completedWorkout
+                self.showingSummary = true
+            } else {
+                // If workout failed to complete, just dismiss
+                dismiss()
             }
-            
-            dismiss()
         }
     }
     
@@ -354,6 +382,45 @@ struct WorkoutView: View {
         let timeReward = Int(workoutSession.elapsedTime / 300) // 1 sat per 5 minutes
         return max(100, baseReward + timeReward)
     }
+    
+    /// Publish completed workout to Nostr relays
+    private func publishWorkoutToNostr(_ workout: Workout) async {
+        guard let user = authService.currentUser else {
+            print("❌ No authenticated user for Nostr publishing")
+            return
+        }
+        
+        // Check if NostrService is connected to relays
+        if !nostrService.isConnected {
+            print("⚠️ NostrService not connected to relays, attempting connection...")
+            await nostrService.connectToRelays()
+            
+            // Wait briefly and check connection again
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            guard nostrService.isConnected else {
+                print("❌ Failed to connect to Nostr relays for workout publishing")
+                return
+            }
+        }
+        
+        // Publish workout event with public privacy level
+        let success = await nostrService.publishWorkoutEvent(
+            workout, 
+            privacyLevel: .public,
+            teamID: nil, // TODO: Add team support if user is in a team
+            challengeID: nil // TODO: Add challenge support if workout is part of event
+        )
+        
+        if success {
+            print("✅ Successfully published workout to Nostr!")
+            print("   🏃‍♂️ Activity: \(workout.activityType.displayName)")
+            print("   📏 Distance: \(String(format: "%.2f", workout.distance/1000))km")
+            print("   ⏱️ Duration: \(formatTime(workout.duration))")
+            print("   🔗 Event published to \(nostrService.connectedRelays.count) relays")
+        } else {
+            print("❌ Failed to publish workout to Nostr relays")
+        }
+    }
 }
 
 #Preview {
@@ -362,4 +429,8 @@ struct WorkoutView: View {
         .environmentObject(LocationService())
         .environmentObject(HealthKitService())
         .environmentObject(AuthenticationService())
+        .environmentObject(CashuService())
+        .environmentObject(StreakService())
+        .environmentObject(NostrService())
+        .environmentObject(WorkoutStorage())
 }

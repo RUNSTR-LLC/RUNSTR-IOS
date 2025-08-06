@@ -188,15 +188,17 @@ class WorkoutSession: ObservableObject {
             return false
         }
         
-        // Initialize workout
-        currentWorkout = Workout(activityType: activityType, userID: userID)
-        isActive = true
-        isPaused = false
-        startTime = Date()
-        elapsedTime = 0
-        currentDistance = 0
-        currentCalories = 0
-        locations.removeAll()
+        // Initialize workout on main thread
+        await MainActor.run {
+            currentWorkout = Workout(activityType: activityType, userID: userID)
+            isActive = true
+            isPaused = false
+            startTime = Date()
+            elapsedTime = 0
+            currentDistance = 0
+            currentCalories = 0
+            locations.removeAll()
+        }
         
         // Start services
         let healthKitStarted = await healthKitService.startWorkoutSession(activityType: activityType)
@@ -207,10 +209,12 @@ class WorkoutSession: ObservableObject {
         
         locationService.startTracking()
         
-        // Start timer for UI updates
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            Task { @MainActor in
-                self.updateWorkoutData()
+        // Start timer for UI updates on main thread
+        await MainActor.run {
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                Task { @MainActor in
+                    self.updateWorkoutData()
+                }
             }
         }
         
@@ -221,8 +225,10 @@ class WorkoutSession: ObservableObject {
     func pauseWorkout() {
         guard isActive, !isPaused else { return }
         
-        isPaused = true
-        timer?.invalidate()
+        Task { @MainActor in
+            isPaused = true
+            timer?.invalidate()
+        }
         
         // Pause location tracking
         locationService?.pauseTracking()
@@ -233,17 +239,19 @@ class WorkoutSession: ObservableObject {
     func resumeWorkout() {
         guard isActive, isPaused else { return }
         
-        isPaused = false
+        Task { @MainActor in
+            isPaused = false
+            
+            // Restart timer
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                Task { @MainActor in
+                    self.updateWorkoutData()
+                }
+            }
+        }
         
         // Resume location tracking
         locationService?.resumeTracking()
-        
-        // Restart timer
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            Task { @MainActor in
-                self.updateWorkoutData()
-            }
-        }
         
         print("▶️ Workout resumed")
     }
@@ -251,9 +259,12 @@ class WorkoutSession: ObservableObject {
     func endWorkout() async -> Workout? {
         guard isActive else { return nil }
         
-        timer?.invalidate()
-        isActive = false
-        isPaused = false
+        // Update UI state on main thread
+        await MainActor.run {
+            timer?.invalidate()
+            isActive = false
+            isPaused = false
+        }
         
         // Stop location tracking
         locationService?.stopTracking()
@@ -263,22 +274,25 @@ class WorkoutSession: ObservableObject {
         
         guard var workout = currentWorkout else { return nil }
         
-        // Update workout with final data
-        workout.duration = elapsedTime
-        workout.distance = currentDistance
-        workout.averagePace = calculateAveragePace()
-        workout.rewardAmount = calculateReward()
-        workout.calories = currentCalories
-        workout.route = locations.map { $0.coordinate }
-        workout.elevationGain = calculateElevationGain()
-        workout.endTime = Date()
+        // Update workout with final data on main thread
+        await MainActor.run {
+            workout.duration = elapsedTime
+            workout.distance = currentDistance
+            workout.averagePace = calculateAveragePace()
+            workout.rewardAmount = calculateReward()
+            workout.calories = currentCalories
+            workout.route = locations.map { $0.coordinate }
+            workout.elevationGain = calculateElevationGain()
+            workout.endTime = Date()
+            
+            currentWorkout = nil
+        }
         
-        currentWorkout = nil
-        
-        print("✅ Workout ended - Distance: \(String(format: "%.2f", currentDistance/1000))km, Duration: \(formatTime(elapsedTime))")
+        print("✅ Workout ended - Distance: \(String(format: "%.2f", workout.distance/1000))km, Duration: \(formatTime(workout.duration))")
         return workout
     }
     
+    @MainActor
     private func updateWorkoutData() {
         guard let startTime = startTime, !isPaused else { return }
         

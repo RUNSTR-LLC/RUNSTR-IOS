@@ -76,7 +76,9 @@ struct EventDiscoveryView: View {
         VStack(spacing: 0) {
             // Search and filters
             VStack(spacing: 12) {
-                SearchBar(text: $searchText)
+                TextField("Search events...", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal)
                 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {

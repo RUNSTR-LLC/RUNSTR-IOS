@@ -17,6 +17,7 @@ struct RUNSTR_IOSApp: App {
     @StateObject private var nostrService = NostrService()
     @StateObject private var cashuService = CashuService()
     @StateObject private var streakService = StreakService()
+    @StateObject private var workoutStorage = WorkoutStorage()
     
     init() {
         // Configuration will be done in onAppear
@@ -33,6 +34,7 @@ struct RUNSTR_IOSApp: App {
                 .environmentObject(nostrService)
                 .environmentObject(cashuService)
                 .environmentObject(streakService)
+                .environmentObject(workoutStorage)
                 .preferredColorScheme(.dark)
                 .task {
                     // Configure workout session with services first
@@ -40,6 +42,9 @@ struct RUNSTR_IOSApp: App {
                         healthKitService: healthKitService,
                         locationService: locationService
                     )
+                    
+                    // Configure authentication service with NostrService reference
+                    authService.configureNostrService(nostrService)
                     
                     // Request permissions on app startup
                     await requestInitialPermissions()

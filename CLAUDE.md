@@ -202,9 +202,11 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 
 #### NOSTR FRAMEWORK
 - **Use nostr-sdk-ios**: We are using the official Nostr SDK for iOS from https://github.com/nostr-sdk/nostr-sdk-ios
+- **Version**: NostrSDK 0.3.0 (confirmed working version)
 - **No Custom Implementations**: Do not implement custom Nostr protocol handling; use the SDK's provided functionality
 - **SDK Features**: Leverage the SDK's built-in support for events, relays, keys, and NIPs
-- **Stay Updated**: Keep the SDK updated to benefit from latest protocol improvements and bug fixes
+- **Critical API Note**: Many SDK initializers are `internal` - must use Builder pattern for NostrEvent creation
+- **Reference Documentation**: See `nostr-implementation-fixes-2025.md` for **ACTUAL WORKING** API patterns. This is the ONLY source of truth - do not create other Nostr documentation files.
 
 ### Code Conventions
 - SwiftUI view files: PascalCase (e.g., `DashboardView.swift`)
@@ -251,6 +253,9 @@ xcrun simctl spawn booted log stream --predicate 'processImagePath contains "RUN
 - [Cashu Protocol Documentation](https://docs.cashu.space/)
 - [Apple HealthKit Documentation](https://developer.apple.com/documentation/healthkit/)
 - [SwiftUI Best Practices](https://developer.apple.com/tutorials/swiftui/)
+
+### Project-Specific Documentation
+- [`nostr-implementation-fixes-2025.md`](./nostr-implementation-fixes-2025.md) - **ONLY** source of truth for NostrSDK 0.3.0 API patterns. Contains actual working code that compiles and runs.
 
 ## Production Readiness Status
 
