@@ -19,6 +19,7 @@ struct RUNSTR_IOSApp: App {
     @StateObject private var streakService = StreakService()
     @StateObject private var workoutStorage = WorkoutStorage()
     @StateObject private var teamService = TeamService()
+    @StateObject private var eventService = EventService()
     
     init() {
         // Configuration will be done in onAppear
@@ -37,6 +38,7 @@ struct RUNSTR_IOSApp: App {
                 .environmentObject(streakService)
                 .environmentObject(workoutStorage)
                 .environmentObject(teamService)
+                .environmentObject(eventService)
                 .preferredColorScheme(.dark)
                 .task {
                     // Configure workout session with services first

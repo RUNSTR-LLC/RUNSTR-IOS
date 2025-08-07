@@ -44,11 +44,11 @@ struct MainTabView: View {
                 }
                 .tag(3)
             
-            // Music Tab
-            MusicView()
+            // Events Tab
+            EventsView()
                 .tabItem {
-                    Image(systemName: "music.note")
-                    Text("MUSIC")
+                    Image(systemName: "calendar")
+                    Text("EVENTS")
                 }
                 .tag(4)
         }
