@@ -17,6 +17,7 @@ class HealthKitService: NSObject, ObservableObject {
     // private var workoutBuilder: HKWorkoutBuilder? // not needed for basic implementation
     private var heartRateQuery: HKAnchoredObjectQuery?
     private var calorieQuery: HKAnchoredObjectQuery?
+    private var stepCountQuery: HKAnchoredObjectQuery?
     private var cancellables = Set<AnyCancellable>()
     
     private let typesToRead: Set<HKObjectType> = [
@@ -25,8 +26,11 @@ class HealthKitService: NSObject, ObservableObject {
         HKQuantityType.quantityType(forIdentifier: .basalEnergyBurned)!,
         HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!,
         HKQuantityType.quantityType(forIdentifier: .distanceCycling)!,
+        HKQuantityType.quantityType(forIdentifier: .distanceSwimming)!,
         HKQuantityType.quantityType(forIdentifier: .stepCount)!,
         HKQuantityType.quantityType(forIdentifier: .vo2Max)!,
+        HKQuantityType.quantityType(forIdentifier: .pushCount)!,
+        HKQuantityType.quantityType(forIdentifier: .swimmingStrokeCount)!,
         HKSeriesType.workoutRoute(),
         HKWorkoutType.workoutType()
     ]
@@ -35,6 +39,9 @@ class HealthKitService: NSObject, ObservableObject {
         HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!,
         HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!,
         HKQuantityType.quantityType(forIdentifier: .distanceCycling)!,
+        HKQuantityType.quantityType(forIdentifier: .distanceSwimming)!,
+        HKQuantityType.quantityType(forIdentifier: .pushCount)!,
+        HKQuantityType.quantityType(forIdentifier: .swimmingStrokeCount)!,
         HKSeriesType.workoutRoute(),
         HKWorkoutType.workoutType()
     ]
@@ -90,6 +97,7 @@ class HealthKitService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.isWorkoutActive = true
             self.currentCalories = 0
+            self.currentSteps = 0
         }
         
         print("✅ Started HealthKit data collection for \(activityType.displayName)")
@@ -150,6 +158,7 @@ class HealthKitService: NSObject, ObservableObject {
     private func startRealTimeQueries() {
         startHeartRateQuery()
         startCalorieQuery()
+        startStepCountQuery()
     }
     
     private func stopRealTimeQueries() {
@@ -161,6 +170,11 @@ class HealthKitService: NSObject, ObservableObject {
         if let calorieQuery = calorieQuery {
             healthStore.stop(calorieQuery)
             self.calorieQuery = nil
+        }
+        
+        if let stepCountQuery = stepCountQuery {
+            healthStore.stop(stepCountQuery)
+            self.stepCountQuery = nil
         }
     }
     
@@ -238,6 +252,45 @@ class HealthKitService: NSObject, ObservableObject {
         
         DispatchQueue.main.async {
             self.currentCalories += totalCalories
+        }
+    }
+    
+    private func startStepCountQuery() {
+        guard isAuthorized else { return }
+        
+        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let predicate = HKQuery.predicateForSamples(withStart: Date().addingTimeInterval(-60),
+                                                   end: nil,
+                                                   options: .strictStartDate)
+        
+        stepCountQuery = HKAnchoredObjectQuery(
+            type: stepType,
+            predicate: predicate,
+            anchor: nil,
+            limit: HKObjectQueryNoLimit
+        ) { [weak self] _, samples, _, _, _ in
+            self?.processStepSamples(samples)
+        }
+        
+        stepCountQuery?.updateHandler = { [weak self] _, samples, _, _, _ in
+            self?.processStepSamples(samples)
+        }
+        
+        if let query = stepCountQuery {
+            healthStore.execute(query)
+        }
+    }
+    
+    private func processStepSamples(_ samples: [HKSample]?) {
+        guard let stepSamples = samples as? [HKQuantitySample] else { return }
+        
+        let stepUnit = HKUnit.count()
+        let totalSteps = stepSamples.reduce(0.0) { total, sample in
+            return total + sample.quantity.doubleValue(for: stepUnit)
+        }
+        
+        DispatchQueue.main.async {
+            self.currentSteps += Int(totalSteps)
         }
     }
     
@@ -613,6 +666,20 @@ extension ActivityType {
             return .walking
         case .cycling:
             return .cycling
+        case .strengthTraining:
+            return .traditionalStrengthTraining
+        case .yoga:
+            return .yoga
+        case .swimming:
+            return .swimming
+        case .functionalStrengthTraining:
+            return .functionalStrengthTraining
+        case .hiit:
+            return .highIntensityIntervalTraining
+        case .crossTraining:
+            return .crossTraining
+        case .flexibility:
+            return .flexibility
         }
     }
 }

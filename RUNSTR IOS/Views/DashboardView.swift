@@ -98,22 +98,35 @@ struct DashboardView: View {
     
     private var headerSection: some View {
         HStack {
-            // Activity selector
-            HStack(spacing: 0) {
-                Button("RUNSTR") { 
-                    selectedActivityType = .running
+            // Dynamic activity selector
+            Menu {
+                ForEach(ActivityType.allCases, id: \.self) { activityType in
+                    Button {
+                        selectedActivityType = activityType
+                    } label: {
+                        HStack {
+                            Image(systemName: activityType.systemImageName)
+                            Text(activityType.displayName)
+                        }
+                    }
                 }
-                .buttonStyle(RunstrActivityButton(isSelected: selectedActivityType == .running))
-                
-                Button("WALKSTR") { 
-                    selectedActivityType = .walking
+            } label: {
+                HStack(spacing: RunstrSpacing.sm) {
+                    Image(systemName: selectedActivityType.systemImageName)
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrWhite)
+                    
+                    Text(selectedActivityType.displayName.uppercased())
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrWhite)
+                        .fontWeight(.medium)
+                    
+                    Image(systemName: "chevron.down")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
                 }
-                .buttonStyle(RunstrActivityButton(isSelected: selectedActivityType == .walking))
-                
-                Button("CYCLESTR") { 
-                    selectedActivityType = .cycling
-                }
-                .buttonStyle(RunstrActivityButton(isSelected: selectedActivityType == .cycling))
+                .padding(.horizontal, RunstrSpacing.md)
+                .padding(.vertical, RunstrSpacing.sm)
             }
             .runstrCard()
             
@@ -182,24 +195,121 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .runstrCard()
             
-            // Pace card
+            // Activity-specific metric card (conditional based on activity type)
             VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
-                HStack {
-                    Image(systemName: "speedometer")
-                        .font(.runstrCaption)
+                switch selectedActivityType {
+                case .walking:
+                    HStack {
+                        Image(systemName: "shoeprints.fill")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                        Text("Steps")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                    }
+                    Text(workoutSession.isActive ? "\(workoutSession.currentSteps)" : "0")
+                        .font(.runstrMetric)
+                        .foregroundColor(.runstrWhite)
+                    Text("steps")
+                        .font(.runstrSmall)
                         .foregroundColor(.runstrGray)
-                    Text("Pace")
-                        .font(.runstrCaption)
+                        
+                case .cycling:
+                    HStack {
+                        Image(systemName: "speedometer")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                        Text("Speed")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                    }
+                    Text(workoutSession.isActive ? String(format: "%.1f", workoutSession.currentSpeed * 2.23694) : "0.0")
+                        .font(.runstrMetric)
+                        .foregroundColor(.runstrWhite)
+                    Text("mph")
+                        .font(.runstrSmall)
+                        .foregroundColor(.runstrGray)
+                        
+                case .swimming:
+                    HStack {
+                        Image(systemName: "figure.pool.swim")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                        Text("Strokes")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                    }
+                    Text(workoutSession.isActive ? "0" : "--")  // TODO: Add stroke counting
+                        .font(.runstrMetric)
+                        .foregroundColor(.runstrWhite)
+                    Text("count")
+                        .font(.runstrSmall)
+                        .foregroundColor(.runstrGray)
+                        
+                case .strengthTraining, .functionalStrengthTraining:
+                    HStack {
+                        Image(systemName: "dumbbell")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                        Text("Sets")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                    }
+                    Text(workoutSession.isActive ? "1" : "--")  // TODO: Add set tracking
+                        .font(.runstrMetric)
+                        .foregroundColor(.runstrWhite)
+                    Text("sets")
+                        .font(.runstrSmall)
+                        .foregroundColor(.runstrGray)
+                        
+                case .yoga, .flexibility:
+                    HStack {
+                        Image(systemName: "heart")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                        Text("Focus")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                    }
+                    Text(workoutSession.isActive ? "Flow" : "--")
+                        .font(.runstrMetric)
+                        .foregroundColor(.runstrWhite)
+                    Text("mode")
+                        .font(.runstrSmall)
+                        .foregroundColor(.runstrGray)
+                        
+                case .hiit, .crossTraining:
+                    HStack {
+                        Image(systemName: "bolt")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                        Text("Intensity")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                    }
+                    Text(workoutSession.isActive ? "High" : "--")
+                        .font(.runstrMetric)
+                        .foregroundColor(.runstrWhite)
+                    Text("zone")
+                        .font(.runstrSmall)
+                        .foregroundColor(.runstrGray)
+                        
+                default: // .running
+                    HStack {
+                        Image(systemName: "speedometer")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                        Text("Pace")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                    }
+                    Text(workoutSession.isActive ? String(format: "%.1f", workoutSession.currentPace) : "--")
+                        .font(.runstrMetric)
+                        .foregroundColor(.runstrWhite)
+                    Text("min/mi")
+                        .font(.runstrSmall)
                         .foregroundColor(.runstrGray)
                 }
-                
-                Text(workoutSession.isActive ? String(format: "%.1f", workoutSession.currentPace) : "--")
-                    .font(.runstrMetric)
-                    .foregroundColor(.runstrWhite)
-                
-                Text("min/mi")
-                    .font(.runstrSmall)
-                    .foregroundColor(.runstrGray)
             }
             .padding(RunstrSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -473,48 +583,6 @@ struct DashboardView: View {
         .runstrCard()
     }
     
-    private var workoutStartSection: some View {
-        VStack(spacing: 24) {
-            HStack {
-                Text("Start Workout")
-                    .font(.system(size: 18, weight: .medium, design: .default))
-                    .foregroundColor(.white)
-                Spacer()
-            }
-            
-            VStack(spacing: 16) {
-                ForEach(ActivityType.allCases, id: \.self) { activityType in
-                    Button {
-                        selectedActivityType = activityType
-                        showingWorkoutView = true
-                    } label: {
-                        HStack(spacing: 16) {
-                            Image(systemName: activityType.systemImageName)
-                                .font(.title2)
-                                .foregroundColor(.white)
-                                .frame(width: 24, height: 24)
-                            
-                            Text(activityType.displayName)
-                                .font(.system(size: 16, weight: .medium, design: .default))
-                                .foregroundColor(.white)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.gray)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 16)
-                        .background(
-                            RoundedRectangle(cornerRadius: 2)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                        )
-                    }
-                }
-            }
-        }
-    }
     
     private var currentWorkoutSection: some View {
         VStack(spacing: 20) {

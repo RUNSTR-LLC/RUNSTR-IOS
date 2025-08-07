@@ -21,8 +21,8 @@ enum SubscriptionTier: String, Codable, CaseIterable {
         switch self {
         case .none: return 0.0
         case .member: return 3.99
-        case .captain: return 10.99
-        case .organization: return 24.99
+        case .captain: return 19.99
+        case .organization: return 49.99
         }
     }
     

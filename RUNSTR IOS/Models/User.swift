@@ -32,38 +32,22 @@ struct User: Codable, Identifiable {
         self.loginMethod = .apple
     }
     
-    // Nostr login initializer
-    init(mainNostrPublicKey: String, runstrNostrKeys: NostrKeyPair, profile: NostrProfile? = nil) {
+    // RUNSTR login initializer
+    init(runstrNostrKeys: NostrKeyPair, profile: NostrProfile? = nil) {
         self.id = UUID().uuidString
         self.appleUserID = nil
         self.email = nil
         self.runstrNostrPublicKey = runstrNostrKeys.publicKey
         self.runstrNostrPrivateKey = runstrNostrKeys.privateKey
-        self.mainNostrPublicKey = mainNostrPublicKey
-        self.isDelegatedSigning = false // Will be true after delegation setup
+        self.mainNostrPublicKey = nil // No main npub initially - user can link later
+        self.isDelegatedSigning = false
         self.subscriptionTier = .none
         self.createdAt = Date()
         self.profile = UserProfile(from: profile)
         self.stats = UserStats()
-        self.loginMethod = .nostr
+        self.loginMethod = .runstr
     }
     
-    // nsec bunker login initializer
-    init(bunkerPublicKey: String, authenticationMethod: LoginMethod, connectionManager: NIP46ConnectionManager) {
-        self.id = UUID().uuidString
-        self.appleUserID = nil
-        self.email = nil
-        // For nsec bunker, we don't store private keys locally - signing is remote
-        self.runstrNostrPublicKey = bunkerPublicKey
-        self.runstrNostrPrivateKey = "" // Empty since we use remote signing
-        self.mainNostrPublicKey = bunkerPublicKey
-        self.isDelegatedSigning = true // nsec bunker is inherently "delegated" signing
-        self.subscriptionTier = .none
-        self.createdAt = Date()
-        self.profile = UserProfile()
-        self.stats = UserStats()
-        self.loginMethod = authenticationMethod
-    }
     
     // Get display npub (main if linked, otherwise RUNSTR-generated)
     var displayNostrPublicKey: String {
@@ -112,8 +96,7 @@ struct User: Codable, Identifiable {
 
 enum LoginMethod: String, Codable {
     case apple
-    case nostr
-    case nsecBunker // NIP-46 remote signing
+    case runstr // RUNSTR native login with local key storage
     case email // Future implementation
 }
 
@@ -251,9 +234,27 @@ enum ActivityType: String, Codable, CaseIterable {
     case running = "running"
     case walking = "walking"
     case cycling = "cycling"
+    case strengthTraining = "strength_training"
+    case yoga = "yoga"
+    case swimming = "swimming"
+    case functionalStrengthTraining = "functional_strength_training"
+    case hiit = "hiit"
+    case crossTraining = "cross_training"
+    case flexibility = "flexibility"
     
     var displayName: String {
-        return self.rawValue.capitalized
+        switch self {
+        case .running: return "Running"
+        case .walking: return "Walking"
+        case .cycling: return "Cycling"
+        case .strengthTraining: return "Strength Training"
+        case .yoga: return "Yoga"
+        case .swimming: return "Swimming"
+        case .functionalStrengthTraining: return "Functional Strength"
+        case .hiit: return "HIIT"
+        case .crossTraining: return "Cross Training"
+        case .flexibility: return "Flexibility"
+        }
     }
     
     var systemImageName: String {
@@ -261,6 +262,13 @@ enum ActivityType: String, Codable, CaseIterable {
         case .running: return "figure.run"
         case .walking: return "figure.walk"
         case .cycling: return "bicycle"
+        case .strengthTraining: return "dumbbell"
+        case .yoga: return "figure.mind.and.body"
+        case .swimming: return "figure.pool.swim"
+        case .functionalStrengthTraining: return "figure.strengthtraining.functional"
+        case .hiit: return "timer"
+        case .crossTraining: return "figure.cross.training"
+        case .flexibility: return "figure.flexibility"
         }
     }
 }
