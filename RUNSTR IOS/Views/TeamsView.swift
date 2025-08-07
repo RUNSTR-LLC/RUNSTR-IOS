@@ -5,8 +5,12 @@ struct TeamsView: View {
     @EnvironmentObject var teamService: TeamService
     @State private var showingSettings = false
     @State private var showingTeamCreation = false
+    @State private var showingWalletView = false
     @State private var selectedTab = 0
     @State private var selectedActivityType: ActivityType = .running
+    
+    // Mock wallet balance to match dashboard
+    @State private var mockWalletBalance: Int = 2500
     
     var body: some View {
         NavigationView {
@@ -37,6 +41,9 @@ struct TeamsView: View {
         }
         .sheet(isPresented: $showingTeamCreation) {
             TeamCreationView()
+        }
+        .sheet(isPresented: $showingWalletView) {
+            WalletView()
         }
         .onAppear {
             loadTeamData()
@@ -80,6 +87,19 @@ struct TeamsView: View {
             .runstrCard()
             
             Spacer()
+            
+            // Wallet balance button
+            Button {
+                showingWalletView = true
+            } label: {
+                Text("\(mockWalletBalance)")
+                    .font(.title2)
+                    .foregroundColor(.runstrWhite)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, RunstrSpacing.md)
+                    .padding(.vertical, RunstrSpacing.sm)
+            }
+            .runstrCard()
             
             // Create Team Button (for Captains/Organizations)
             if let user = authService.currentUser, teamService.canCreateTeam(user: user) {

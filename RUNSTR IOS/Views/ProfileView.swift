@@ -5,9 +5,13 @@ struct ProfileView: View {
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var nostrService: NostrService
     @State private var showingSettings = false
+    @State private var showingWalletView = false
     @State private var statsService: StatsService?
     @State private var isLoading = false
     @State private var selectedActivity: ActivityType = .running
+    
+    // Mock wallet balance to match dashboard
+    @State private var mockWalletBalance: Int = 2500
     
     var body: some View {
         NavigationView {
@@ -54,6 +58,9 @@ struct ProfileView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
+        .sheet(isPresented: $showingWalletView) {
+            WalletView()
+        }
         .onAppear {
             if statsService == nil {
                 statsService = StatsService(
@@ -70,26 +77,52 @@ struct ProfileView: View {
     
     private var headerSection: some View {
         HStack {
-            // Activity selector
-            HStack(spacing: 0) {
-                Button("RUNSTR") {
-                    selectedActivity = .running
+            // Dynamic activity selector
+            Menu {
+                ForEach(ActivityType.allCases, id: \.self) { activityType in
+                    Button {
+                        selectedActivity = activityType
+                    } label: {
+                        HStack {
+                            Image(systemName: activityType.systemImageName)
+                            Text(activityType.displayName)
+                        }
+                    }
                 }
-                .buttonStyle(RunstrActivityButton(isSelected: selectedActivity == .running))
-                
-                Button("WALKSTR") {
-                    selectedActivity = .walking
+            } label: {
+                HStack(spacing: RunstrSpacing.sm) {
+                    Image(systemName: selectedActivity.systemImageName)
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrWhite)
+                    
+                    Text(selectedActivity.displayName.uppercased())
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrWhite)
+                        .fontWeight(.medium)
+                    
+                    Image(systemName: "chevron.down")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
                 }
-                .buttonStyle(RunstrActivityButton(isSelected: selectedActivity == .walking))
-                
-                Button("CYCLESTR") {
-                    selectedActivity = .cycling
-                }
-                .buttonStyle(RunstrActivityButton(isSelected: selectedActivity == .cycling))
+                .padding(.horizontal, RunstrSpacing.md)
+                .padding(.vertical, RunstrSpacing.sm)
             }
             .runstrCard()
             
             Spacer()
+            
+            // Wallet balance button
+            Button {
+                showingWalletView = true
+            } label: {
+                Text("\(mockWalletBalance)")
+                    .font(.title2)
+                    .foregroundColor(.runstrWhite)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, RunstrSpacing.md)
+                    .padding(.vertical, RunstrSpacing.sm)
+            }
+            .runstrCard()
             
             // Settings button
             Button {
@@ -177,33 +210,25 @@ struct ProfileView: View {
                 // Total Distance
                 ProfileStatCard(
                     title: "Total Distance",
-                    value: user.stats.formattedTotalDistance,
-                    icon: "figure.run",
-                    color: .runstrAccent
+                    value: user.stats.formattedTotalDistance
                 )
                 
                 // Total Workouts
                 ProfileStatCard(
                     title: "Total Workouts",
-                    value: "\(user.stats.totalWorkouts)",
-                    icon: "list.number",
-                    color: .runstrAccent
+                    value: "\(user.stats.totalWorkouts)"
                 )
                 
                 // Current Streak
                 ProfileStatCard(
                     title: "Current Streak",
-                    value: "\(user.stats.currentStreak) days",
-                    icon: "flame.fill",
-                    color: user.stats.currentStreak > 0 ? .white : .runstrGray
+                    value: "\(user.stats.currentStreak) days"
                 )
                 
                 // Total Sats Earned
                 ProfileStatCard(
                     title: "Sats Earned",
-                    value: "\(user.stats.totalSatsEarned)",
-                    icon: "bitcoinsign.circle.fill",
-                    color: .yellow
+                    value: "\(user.stats.totalSatsEarned)"
                 )
             }
         }
@@ -323,18 +348,9 @@ struct ProfileView: View {
 struct ProfileStatCard: View {
     let title: String
     let value: String
-    let icon: String
-    let color: Color
     
     var body: some View {
         VStack(spacing: RunstrSpacing.sm) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.runstrCaptionMedium)
-                    .foregroundColor(color)
-                Spacer()
-            }
-            
             VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
                 Text(value)
                     .font(.runstrMetricSmall)
@@ -400,7 +416,7 @@ struct PersonalRecordCard: View {
                 if record.isNewRecord {
                     Image(systemName: "star.fill")
                         .font(.runstrSmall)
-                        .foregroundColor(.yellow)
+                        .foregroundColor(.runstrWhite)
                 }
             }
             

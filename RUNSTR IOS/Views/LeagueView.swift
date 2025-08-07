@@ -2,6 +2,11 @@ import SwiftUI
 
 struct LeagueView: View {
     @State private var showingSettings = false
+    @State private var showingWalletView = false
+    @State private var selectedActivityType: ActivityType = .running
+    
+    // Mock wallet balance to match dashboard
+    @State private var mockWalletBalance: Int = 2500
     
     var body: some View {
         NavigationView {
@@ -39,24 +44,59 @@ struct LeagueView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
+        .sheet(isPresented: $showingWalletView) {
+            WalletView()
+        }
     }
     
     private var headerSection: some View {
         HStack {
-            // Activity selector
-            HStack(spacing: 0) {
-                Button("RUNSTR") { }
-                    .buttonStyle(RunstrActivityButton(isSelected: true))
-                
-                Button("WALKSTR") { }
-                    .buttonStyle(RunstrActivityButton(isSelected: false))
-                
-                Button("CYCLESTR") { }
-                    .buttonStyle(RunstrActivityButton(isSelected: false))
+            // Dynamic activity selector
+            Menu {
+                ForEach(ActivityType.allCases, id: \.self) { activityType in
+                    Button {
+                        selectedActivityType = activityType
+                    } label: {
+                        HStack {
+                            Image(systemName: activityType.systemImageName)
+                            Text(activityType.displayName)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: RunstrSpacing.sm) {
+                    Image(systemName: selectedActivityType.systemImageName)
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrWhite)
+                    
+                    Text(selectedActivityType.displayName.uppercased())
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrWhite)
+                        .fontWeight(.medium)
+                    
+                    Image(systemName: "chevron.down")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                }
+                .padding(.horizontal, RunstrSpacing.md)
+                .padding(.vertical, RunstrSpacing.sm)
             }
             .runstrCard()
             
             Spacer()
+            
+            // Wallet balance button
+            Button {
+                showingWalletView = true
+            } label: {
+                Text("\(mockWalletBalance)")
+                    .font(.title2)
+                    .foregroundColor(.runstrWhite)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, RunstrSpacing.md)
+                    .padding(.vertical, RunstrSpacing.sm)
+            }
+            .runstrCard()
             
             // Settings button
             Button {

@@ -9,11 +9,20 @@ struct StatsView: View {
     @State private var statsService: StatsService?
     @State private var selectedTimeframe: TimeFrame = .week
     @State private var selectedMetric: StatsMetric = .distance
+    @State private var selectedActivityType: ActivityType = .running
+    @State private var showingWalletView = false
+    @State private var showingSettingsView = false
+    
+    // Mock wallet balance to match dashboard
+    @State private var mockWalletBalance: Int = 2500
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: RunstrSpacing.lg) {
+                    // Header with activity selector and settings
+                    headerSection
+                    
                     // Time frame selector
                     timeFrameSelector
                     
@@ -28,13 +37,14 @@ struct StatsView: View {
                     
                     // AI insights from Coach Claude
                     coachInsightsSection
+                    
+                    Spacer(minLength: 100) // Bottom padding for tab bar
                 }
-                .padding()
+                .padding(.horizontal, RunstrSpacing.md)
+                .padding(.top, RunstrSpacing.md)
             }
-            .navigationTitle("Stats")
-            .navigationBarTitleDisplayMode(.large)
-            .background(Color.black)
-            .foregroundColor(.white)
+            .background(Color.runstrBackground)
+            .navigationBarHidden(true)
             .onAppear {
                 if statsService == nil {
                     statsService = StatsService(
@@ -59,6 +69,72 @@ struct StatsView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingWalletView) {
+            WalletView()
+        }
+        .sheet(isPresented: $showingSettingsView) {
+            SettingsView()
+        }
+    }
+    
+    private var headerSection: some View {
+        HStack {
+            // Dynamic activity selector
+            Menu {
+                ForEach(ActivityType.allCases, id: \.self) { activityType in
+                    Button {
+                        selectedActivityType = activityType
+                    } label: {
+                        HStack {
+                            Image(systemName: activityType.systemImageName)
+                            Text(activityType.displayName)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: RunstrSpacing.sm) {
+                    Image(systemName: selectedActivityType.systemImageName)
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrWhite)
+                    
+                    Text(selectedActivityType.displayName.uppercased())
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrWhite)
+                        .fontWeight(.medium)
+                    
+                    Image(systemName: "chevron.down")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                }
+                .padding(.horizontal, RunstrSpacing.md)
+                .padding(.vertical, RunstrSpacing.sm)
+            }
+            .runstrCard()
+            
+            Spacer()
+            
+            // Wallet balance button
+            Button {
+                showingWalletView = true
+            } label: {
+                Text("\(mockWalletBalance)")
+                    .font(.title2)
+                    .foregroundColor(.runstrWhite)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, RunstrSpacing.md)
+                    .padding(.vertical, RunstrSpacing.sm)
+            }
+            .runstrCard()
+            
+            // Settings button
+            Button {
+                showingSettingsView = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.title2)
+                    .foregroundColor(.runstrWhite)
+            }
+        }
     }
     
     private var timeFrameSelector: some View {
@@ -68,17 +144,17 @@ struct StatsView: View {
                     selectedTimeframe = timeFrame
                 } label: {
                     Text(timeFrame.displayName)
-                        .font(.subheadline)
+                        .font(.runstrBody)
                         .fontWeight(.medium)
-                        .foregroundColor(selectedTimeframe == timeFrame ? .black : .white)
+                        .foregroundColor(selectedTimeframe == timeFrame ? .runstrBackground : .runstrWhite)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(selectedTimeframe == timeFrame ? Color.white : Color.clear)
+                        .padding(.vertical, RunstrSpacing.sm)
+                        .background(selectedTimeframe == timeFrame ? Color.runstrWhite : Color.clear)
                 }
             }
         }
-        .background(Color.gray.opacity(0.2))
-        .cornerRadius(12)
+        .background(Color.runstrGray.opacity(0.2))
+        .cornerRadius(RunstrRadius.sm)
     }
     
     private var mainChartSection: some View {
@@ -151,33 +227,30 @@ struct StatsView: View {
                 }
                 .frame(height: 200)
                 .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.gray.opacity(0.1))
-                )
+                .runstrCard()
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.gray.opacity(0.1))
+                    RoundedRectangle(cornerRadius: RunstrRadius.md)
+                        .fill(Color.runstrCardBackground)
                         .frame(height: 200)
                     
                     if statsService?.isLoading == true {
                         VStack {
                             ProgressView()
                             Text("Loading chart data...")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                                .font(.runstrBody)
+                                .foregroundColor(.runstrGray)
                         }
                     } else {
                         VStack {
                             Text("📊")
                                 .font(.system(size: 40))
                             Text("No data available")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                                .font(.runstrBody)
+                                .foregroundColor(.runstrGray)
                             Text("Complete workouts to see your progress")
-                                .font(.caption)
-                                .foregroundColor(.gray)
+                                .font(.runstrCaption)
+                                .foregroundColor(.runstrGray)
                         }
                     }
                 }
@@ -234,7 +307,7 @@ struct StatsView: View {
                             value: "\(timeframeStats.satsEarned)",
                             change: timeframeStats.satsEarned > 0 ? "+\(timeframeStats.satsEarned)" : "0",
                             isPositive: timeframeStats.satsEarned > 0,
-                            icon: "bitcoinsign.circle"
+                            icon: "bitcoinsign.circle.fill"
                         )
                     }
                 }
@@ -382,34 +455,34 @@ struct SummaryCard: View {
     let icon: String
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: RunstrSpacing.sm) {
             HStack {
                 Image(systemName: icon)
-                    .foregroundColor(.white)
+                    .foregroundColor(.runstrWhite)
                 
                 Spacer()
                 
                 HStack(spacing: 2) {
                     Image(systemName: isPositive ? "arrow.up" : "arrow.down")
-                        .font(.caption)
+                        .font(.runstrCaption)
                     Text(change)
-                        .font(.caption)
+                        .font(.runstrCaption)
                 }
                 .foregroundColor(isPositive ? .green : .red)
             }
             
             Text(value)
-                .font(.title2)
+                .font(.runstrTitle2)
                 .fontWeight(.bold)
+                .foregroundColor(.runstrWhite)
             
             Text(title)
-                .font(.caption)
-                .foregroundColor(.gray)
+                .font(.runstrCaption)
+                .foregroundColor(.runstrGray)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(16)
+        .padding(RunstrSpacing.md)
+        .runstrCard()
     }
 }
 
@@ -424,36 +497,37 @@ struct PersonalRecordRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(activity)
-                        .font(.subheadline)
+                        .font(.runstrBody)
                         .fontWeight(.semibold)
+                        .foregroundColor(.runstrWhite)
                     
                     if isNewRecord {
                         Text("NEW!")
-                            .font(.caption)
+                            .font(.runstrCaption)
                             .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
+                            .foregroundColor(.runstrWhite)
+                            .padding(.horizontal, RunstrSpacing.xs)
                             .padding(.vertical, 2)
-                            .background(Color.white.opacity(0.2))
+                            .background(Color.runstrWhite.opacity(0.2))
                             .cornerRadius(4)
                     }
                 }
                 
                 Text(date)
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                    .font(.runstrCaption)
+                    .foregroundColor(.runstrGray)
             }
             
             Spacer()
             
             Text(time)
-                .font(.headline)
+                .font(.runstrHeadline)
                 .fontWeight(.bold)
+                .foregroundColor(.runstrWhite)
                 .monospacedDigit()
         }
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(12)
+        .padding(RunstrSpacing.md)
+        .runstrCard()
     }
 }
 
@@ -469,13 +543,13 @@ struct InsightCard: View {
                 .padding(.top, 6)
             
             Text(insight)
-                .font(.subheadline)
+                .font(.runstrBody)
+                .foregroundColor(.runstrWhite)
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(12)
+        .padding(RunstrSpacing.md)
+        .runstrCard()
     }
 }
 
@@ -514,7 +588,7 @@ enum InsightType: Codable {
         switch self {
         case .positive: return .green
         case .tip: return .blue
-        case .warning: return .white
+        case .warning: return .runstrWhite
         }
     }
 }

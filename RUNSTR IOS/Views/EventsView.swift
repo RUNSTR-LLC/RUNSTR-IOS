@@ -2,12 +2,24 @@ import SwiftUI
 
 struct EventsView: View {
     @State private var selectedTab: EventTab = .discover
+    @State private var selectedActivityType: ActivityType = .running
+    @State private var showingWalletView = false
+    @State private var showingSettingsView = false
     @EnvironmentObject var eventService: EventService
     @EnvironmentObject var authService: AuthenticationService
+    
+    // Mock wallet balance to match dashboard
+    @State private var mockWalletBalance: Int = 2500
     
     var body: some View {
         NavigationView {
             eventsContent
+        }
+        .sheet(isPresented: $showingWalletView) {
+            WalletView()
+        }
+        .sheet(isPresented: $showingSettingsView) {
+            SettingsView()
         }
         .onAppear {
             Task {
@@ -21,59 +33,122 @@ struct EventsView: View {
     
     private var eventsContent: some View {
         VStack(spacing: 0) {
-                // Tab selector
-                HStack(spacing: 0) {
-                    ForEach(EventTab.allCases, id: \.self) { tab in
-                        Button {
-                            selectedTab = tab
-                        } label: {
-                            VStack(spacing: 8) {
-                                Text(tab.displayName)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(selectedTab == tab ? .runstrWhite : .runstrGray)
-                                
-                                Rectangle()
-                                    .frame(height: 2)
-                                    .foregroundColor(selectedTab == tab ? .runstrWhite : .clear)
-                            }
+            // Header with activity selector and settings
+            headerSection
+            
+            // Tab selector
+            HStack(spacing: 0) {
+                ForEach(EventTab.allCases, id: \.self) { tab in
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                        VStack(spacing: RunstrSpacing.xs) {
+                            Text(tab.displayName)
+                                .font(.runstrBody)
+                                .fontWeight(.medium)
+                                .foregroundColor(selectedTab == tab ? .runstrWhite : .runstrGray)
+                            
+                            Rectangle()
+                                .frame(height: 2)
+                                .foregroundColor(selectedTab == tab ? .runstrWhite : .clear)
                         }
-                        .frame(maxWidth: .infinity)
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal)
-                .background(Color.runstrBackground)
-                
-                // Content
-                TabView(selection: $selectedTab) {
-                    EventDiscoveryView()
-                        .environmentObject(eventService)
-                        .environmentObject(authService)
-                        .tag(EventTab.discover)
-                    
-                    MyEventsView()
-                        .environmentObject(eventService)
-                        .environmentObject(authService)
-                        .tag(EventTab.myEvents)
-                }
-                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
             }
-            .navigationTitle("Events")
-            .navigationBarTitleDisplayMode(.large)
+            .padding(.horizontal, RunstrSpacing.md)
+            .padding(.top, RunstrSpacing.sm)
             .background(Color.runstrBackground)
-            .foregroundColor(.runstrWhite)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if let currentUser = authService.currentUser, eventService.canCreateEvent(user: currentUser) {
-                        Button(action: {
-                            // TODO: Show event creation sheet
-                        }) {
-                            Image(systemName: "plus")
-                                .foregroundColor(.runstrWhite)
+            
+            // Content
+            TabView(selection: $selectedTab) {
+                EventDiscoveryView()
+                    .environmentObject(eventService)
+                    .environmentObject(authService)
+                    .tag(EventTab.discover)
+                
+                MyEventsView()
+                    .environmentObject(eventService)
+                    .environmentObject(authService)
+                    .tag(EventTab.myEvents)
+            }
+            .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+        }
+        .background(Color.runstrBackground)
+        .navigationBarHidden(true)
+    }
+    
+    private var headerSection: some View {
+        HStack {
+            // Dynamic activity selector
+            Menu {
+                ForEach(ActivityType.allCases, id: \.self) { activityType in
+                    Button {
+                        selectedActivityType = activityType
+                    } label: {
+                        HStack {
+                            Image(systemName: activityType.systemImageName)
+                            Text(activityType.displayName)
                         }
                     }
                 }
+            } label: {
+                HStack(spacing: RunstrSpacing.sm) {
+                    Image(systemName: selectedActivityType.systemImageName)
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrWhite)
+                    
+                    Text(selectedActivityType.displayName.uppercased())
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrWhite)
+                        .fontWeight(.medium)
+                    
+                    Image(systemName: "chevron.down")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                }
+                .padding(.horizontal, RunstrSpacing.md)
+                .padding(.vertical, RunstrSpacing.sm)
             }
+            .runstrCard()
+            
+            Spacer()
+            
+            // Wallet balance button
+            Button {
+                showingWalletView = true
+            } label: {
+                Text("\(mockWalletBalance)")
+                    .font(.title2)
+                    .foregroundColor(.runstrWhite)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, RunstrSpacing.md)
+                    .padding(.vertical, RunstrSpacing.sm)
+            }
+            .runstrCard()
+            
+            // Create Event Button (for Organizations)
+            if let currentUser = authService.currentUser, eventService.canCreateEvent(user: currentUser) {
+                Button {
+                    // TODO: Show event creation sheet
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.runstrWhite)
+                }
+            }
+            
+            // Settings button
+            Button {
+                showingSettingsView = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.title2)
+                    .foregroundColor(.runstrWhite)
+            }
+        }
+        .padding(.horizontal, RunstrSpacing.md)
+        .padding(.top, RunstrSpacing.md)
     }
 }
 
@@ -289,10 +364,10 @@ struct EventCard: View {
                         .foregroundColor(.runstrGray)
                     HStack(spacing: 4) {
                         Image(systemName: "bitcoinsign.circle.fill")
-                            .font(.caption)
+                            .font(.runstrCaption)
                             .foregroundColor(.runstrWhite)
                         Text("\(event.prizePool) sats")
-                            .font(.subheadline)
+                            .font(.runstrBody)
                             .fontWeight(.semibold)
                             .foregroundColor(.runstrWhite)
                     }
