@@ -1,0 +1,162 @@
+{
+  "identifier" : "66B5A8F3",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "66B5A8F3",
+    "_developerTeamID" : "T8DPQXPC86",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 747090542.79073799,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21569090",
+      "localizations" : [
+
+      ],
+      "name" : "RUNSTR Subscriptions",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "3.99",
+          "familyShareable" : false,
+          "id" : "com.runstr.ios.member.monthly",
+          "introductoryOffer" : {
+            "internalID" : "D2E1F2A3",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1W"
+          },
+          "localizations" : [
+            {
+              "description" : "Join teams, participate in events, earn Bitcoin rewards for your workouts",
+              "displayName" : "Member Subscription",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.runstr.ios.member.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Member Monthly",
+          "subscriptionGroupID" : "21569090",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "19.99",
+          "familyShareable" : false,
+          "id" : "com.runstr.ios.captain.monthly",
+          "introductoryOffer" : {
+            "internalID" : "C3F4E5D6",
+            "paymentMode" : "payAsYouGo",
+            "paymentModeData" : {
+              "displayPrice" : "9.99"
+            },
+            "subscriptionPeriod" : "P1M"
+          },
+          "localizations" : [
+            {
+              "description" : "Create and manage teams, earn $1 per team member monthly, create team events",
+              "displayName" : "Captain Subscription",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.runstr.ios.captain.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Captain Monthly",
+          "subscriptionGroupID" : "21569090",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "49.99",
+          "familyShareable" : false,
+          "id" : "com.runstr.ios.organization.monthly",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Create public events, sell tickets, advanced analytics, API access",
+              "displayName" : "Organization Subscription",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.runstr.ios.organization.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Organization Monthly",
+          "subscriptionGroupID" : "21569090",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

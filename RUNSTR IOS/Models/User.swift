@@ -11,7 +11,7 @@ struct User: Codable, Identifiable {
     var isDelegatedSigning: Bool = false // Has linked main npub
     var additionalNostrPublicKeys: [String] = [] // Additional npubs for stats
     var statsConfiguration: StatsConfiguration = StatsConfiguration()
-    let subscriptionTier: SubscriptionTier
+    var subscriptionStatus: SubscriptionStatus
     let createdAt: Date
     var profile: UserProfile
     var stats: UserStats
@@ -25,7 +25,14 @@ struct User: Codable, Identifiable {
         self.runstrNostrPublicKey = nostrKeys.publicKey
         self.runstrNostrPrivateKey = nostrKeys.privateKey
         self.mainNostrPublicKey = nil
-        self.subscriptionTier = .none
+        self.subscriptionStatus = SubscriptionStatus(
+            tier: .none,
+            isActive: false,
+            expirationDate: nil,
+            autoRenew: false,
+            paymentMethod: .applePay,
+            purchaseDate: Date()
+        )
         self.createdAt = Date()
         self.profile = UserProfile()
         self.stats = UserStats()
@@ -41,7 +48,14 @@ struct User: Codable, Identifiable {
         self.runstrNostrPrivateKey = runstrNostrKeys.privateKey
         self.mainNostrPublicKey = nil // No main npub initially - user can link later
         self.isDelegatedSigning = false
-        self.subscriptionTier = .none
+        self.subscriptionStatus = SubscriptionStatus(
+            tier: .none,
+            isActive: false,
+            expirationDate: nil,
+            autoRenew: false,
+            paymentMethod: .applePay,
+            purchaseDate: Date()
+        )
         self.createdAt = Date()
         self.profile = UserProfile(from: profile)
         self.stats = UserStats()
@@ -91,6 +105,50 @@ struct User: Codable, Identifiable {
     // Toggle delegation signing
     mutating func setDelegationSigning(_ enabled: Bool) {
         self.isDelegatedSigning = enabled
+    }
+    
+    // MARK: - Subscription Management
+    
+    // Easy access to current subscription tier
+    var subscriptionTier: SubscriptionTier {
+        return subscriptionStatus.tier
+    }
+    
+    // Check if user has an active subscription
+    var hasActiveSubscription: Bool {
+        return subscriptionStatus.isActive && !subscriptionStatus.isExpired
+    }
+    
+    // Update subscription status after purchase or renewal
+    mutating func updateSubscriptionStatus(_ newStatus: SubscriptionStatus) {
+        self.subscriptionStatus = newStatus
+    }
+    
+    // Cancel subscription (keeps active until expiration)
+    mutating func cancelSubscription() {
+        self.subscriptionStatus = SubscriptionStatus(
+            tier: subscriptionStatus.tier,
+            isActive: subscriptionStatus.isActive,
+            expirationDate: subscriptionStatus.expirationDate,
+            autoRenew: false,
+            paymentMethod: subscriptionStatus.paymentMethod,
+            purchaseDate: subscriptionStatus.purchaseDate
+        )
+    }
+    
+    // Check if user can access tier-specific features
+    func canAccessFeature(requiredTier: SubscriptionTier) -> Bool {
+        guard hasActiveSubscription else {
+            return requiredTier == .none
+        }
+        
+        let tierOrder: [SubscriptionTier] = [.none, .member, .captain, .organization]
+        guard let currentIndex = tierOrder.firstIndex(of: subscriptionStatus.tier),
+              let requiredIndex = tierOrder.firstIndex(of: requiredTier) else {
+            return false
+        }
+        
+        return currentIndex >= requiredIndex
     }
 }
 

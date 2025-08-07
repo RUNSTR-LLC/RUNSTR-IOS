@@ -2400,12 +2400,6 @@ enum NostrError: LocalizedError {
     }
 }
 
-/// Timeout error for async operations
-struct TimeoutError: LocalizedError {
-    var errorDescription: String? {
-        return "Operation timed out"
-    }
-}
 
 
 /// Member contribution tracking
