@@ -2,16 +2,20 @@
 
 ## Project Overview
 
-RUNSTR is a Bitcoin-native fitness app that rewards users with Bitcoin for running and walking activities. The app combines traditional fitness tracking with decentralized social features, team-based challenges, and AI coaching.
+RUNSTR is a fitness club monetization platform that transforms fitness communities into thriving businesses. Organizations and influencers use RUNSTR to generate recurring revenue through member subscriptions and virtual event ticket sales, while members earn Bitcoin rewards for their workouts.
+
+**Platform Value Proposition:**
+- **For Organizations/Influencers**: Turn your fitness following into a sustainable business with monthly recurring revenue and virtual event income
+- **For Members**: Keep using your favorite fitness apps (Apple Watch, Garmin, Strava) while earning Bitcoin rewards through team memberships
 
 **Key Features:**
-- Activity tracking with Apple Watch/HealthKit integration  
-- Bitcoin rewards via Cashu ecash protocol
-- Decentralized data storage using Nostr protocol
-- Team creation and management
-- Community challenges and competitions
-- AI-powered coaching insights (Coach Claude)
-- Subscription tiers (Member: $5.99/mo, Captain: $20.99/mo)
+- Universal workout sync via HealthKit (all workout types supported)
+- Three-tier subscription model (Free, Member: $3.99/mo, Captain: $19.99/mo, Organization: $49.99/mo)
+- Team creation and management platform
+- Virtual fitness events with ticket sales
+- Bitcoin rewards via Lightning/Cashu
+- Revenue sharing for team captains ($1 per member/month)
+- 100% event ticket revenue for organizers
 
 ## Technical Architecture
 
@@ -21,19 +25,21 @@ RUNSTR is a Bitcoin-native fitness app that rewards users with Bitcoin for runni
 - **State Management**: @StateObject, @EnvironmentObject, @Published
 
 ### Key Integrations
-- **HealthKit**: Primary fitness data source
-- **Apple Watch**: WatchKit for seamless workout tracking
-- **Nostr Protocol**: Decentralized data storage (NIP-101e for workouts, NIP-51 for teams)
-- **Cashu Protocol**: Bitcoin ecash rewards system (replaces traditional Bitcoin wallets)
-- **Apple Music**: Workout playlist integration
-- **Claude AI**: Personalized coaching insights
+- **HealthKit**: Universal workout data sync (running, cycling, walking, strength, yoga, swimming)
+- **Apple Watch**: Seamless workout tracking
+- **Garmin/Strava**: Coming soon - additional data sources
+- **Zebedee Lightning**: Bitcoin rewards and payments
+- **Cashu Protocol**: Privacy-preserving ecash system
+- **StoreKit 2**: Subscription management
+- **CloudKit**: Team data synchronization
 
 ### Data Models
-- `User`: Authentication, subscription, Nostr keys, stats
-- `Workout`: GPS tracking, metrics, NIP-101e format
-- `Team`: Community features, NIP-51 lists
-- `Event`: Challenges and competitions
-- `CashuWallet`: Bitcoin reward management
+- `User`: Authentication, subscription tier, wallet, team memberships
+- `Workout`: Synced from HealthKit, all activity types
+- `Team`: Captain-managed groups with revenue tracking
+- `Event`: Virtual competitions with ticket sales
+- `Subscription`: Tier management and revenue distribution
+- `Wallet`: Lightning/Cashu for rewards and payments
 
 ## Project Structure
 
@@ -42,11 +48,12 @@ RUNSTR IOS/
 ├── Models/           # Data models (User, Workout, Team, Event)
 ├── Services/         # Core services (Auth, HealthKit, Location)  
 ├── Views/           # SwiftUI views organized by feature
-│   ├── DashboardView.swift    # Main activity tracking
-│   ├── TeamsView.swift        # Team discovery/management
-│   ├── EventsView.swift       # Competitions
-│   ├── StatsView.swift        # Analytics & Coach Claude
-│   └── SettingsView.swift     # Account & preferences
+│   ├── DashboardView.swift    # Activity tracking & sync
+│   ├── TeamsView.swift        # Team discovery/management/chat
+│   ├── EventsView.swift       # Virtual events & registration
+│   ├── StatsView.swift        # Personal & team analytics
+│   ├── LeagueView.swift       # Coming soon placeholder
+│   └── SettingsView.swift     # Account & subscription
 ├── Extensions/      # Swift extensions
 ├── Utilities/       # Helper functions and constants
 └── Assets.xcassets/ # App icons, colors, images
@@ -97,47 +104,84 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 - Route mapping and analysis
 - Battery-optimized background tracking
 
+## Platform Revenue Model
+
+### Revenue Distribution (Member Subscription: $3.99/month)
+- **$1.00** → RUNSTR platform operations
+- **$1.00** → Selected team captain earnings
+- **$1.00** → Charity (OpenSats/HRF/ALS)
+- **$0.99** → Member rewards pool
+
+### Captain Earnings Potential
+- **Per Member**: $1.00/month recurring revenue
+- **100 Members**: $100/month passive income
+- **500 Members**: $500/month (max team size)
+- **Virtual Events**: Keep 100% of ticket sales
+
+### Organization Benefits
+- **Event Revenue**: 100% of virtual event ticket sales
+- **No Platform Fees**: On event transactions
+- **Sponsorship Opportunities**: Direct brand partnerships
+- **Corporate Programs**: B2B wellness contracts
+
 ## Key Features Implementation
 
-### Workout Tracking Flow
-1. **Start Workout**: User taps start → LocationService begins GPS tracking
-2. **Real-time Data**: HealthKitService streams heart rate, pace, distance
-3. **Data Storage**: Workout saved as NIP-101e note to Nostr relays
-4. **Reward Calculation**: Cashu wallet credited based on distance/duration
-5. **Team Updates**: Activity shared with team members via NIP-51 lists
+### HealthKit Universal Sync
+1. **Automatic Detection**: App detects workouts from any source (Apple Watch, Garmin, Strava)
+2. **Background Sync**: Continuous monitoring for new workouts
+3. **All Activity Types**: Running, cycling, walking, strength training, yoga, swimming, etc.
+4. **Historical Import**: Pull past workouts on first sync
+5. **Real-time Updates**: Live data during active workouts
 
-### Team Management
-- **Discovery**: Browse teams with filtering (activity level, size, location)
-- **Joining**: One-tap join with instant team roster updates
-- **Creation**: Captains can create teams with custom branding
-- **Earnings**: Captains earn 1,000 sats/month per team member
-- **Data**: Teams stored as NIP-51 lists on Nostr relays
+### Team Platform Features
+- **Team Creation**: Captains set up teams with custom branding and rules
+- **Discovery**: Browse teams by activity type, location, or size
+- **Chat System**: Team communication hub for members
+- **Challenges Tab**: Team-specific competitions and goals
+- **Analytics Dashboard**: Member activity and engagement metrics
+- **Revenue Tracking**: Real-time earnings for captains
 
-### Cashu Ecash Rewards System
-- **Cashu Protocol**: Native ecash implementation for privacy and instant settlement
-- **Mint Integration**: Connected to https://mint.runstr.app for token operations
-- **Automatic Distribution**: Rewards minted immediately after workouts
-- **Streak Bonuses**: Daily streak rewards (100-700 sats) with weekly reset
-- **Lightning Withdrawal**: Melt tokens to Lightning Network for Bitcoin withdrawal
-- **Transparency**: Full transaction history and cryptographic verification
+### Virtual Events System
+- **Event Creation**: Organizations create ticketed virtual races/challenges
+- **Registration**: Members sign up and pay entry fees
+- **Live Leaderboards**: Real-time rankings during events
+- **Prize Distribution**: Automatic Bitcoin rewards to winners
+- **Event Analytics**: Participation and revenue metrics
 
-## Subscription Model
+## Subscription Tiers
 
-### Member Tier ($5.99/month)
-- Full activity tracking with Cashu rewards
-- Team joining and participation  
-- Event participation with ecash bonuses
-- Daily streak rewards (100-700 sats)
-- Basic Coach Claude insights
-- Cashu wallet with Lightning withdrawal
+### Free Tier
+- Basic activity tracking (7-day history)
+- View public teams and events
+- Minimal streak rewards (1-2 sats)
+- Limited features to encourage upgrades
 
-### Captain Tier ($20.99/month)
+### Member Tier ($3.99/month)
+- Unlimited activity tracking and history
+- Join unlimited teams
+- Participate in all events and competitions
+- Full team chat access
+- Standard streak rewards (21-100 sats)
+- Export workout data
+- Lightning wallet access
+
+### Captain Tier ($19.99/month)
 - All Member features
-- Team creation and management (up to 500 members)
-- Event creation and hosting
-- 1,000 sats monthly earning per team member
-- Advanced analytics and team insights
-- Enhanced reward multipliers
+- Create and manage teams (up to 500 members)
+- Earn $1 per team member monthly
+- Create team events and challenges
+- Team analytics dashboard
+- Custom team branding
+- Priority support
+
+### Organization Tier ($49.99/month)
+- All Captain features
+- Create public virtual events
+- Sell event tickets (keep 100% revenue)
+- Advanced analytics and reporting
+- API access for integrations
+- Multiple team management
+- Dedicated account manager
 
 ## Testing Strategy
 
@@ -256,6 +300,44 @@ xcrun simctl spawn booted log stream --predicate 'processImagePath contains "RUN
 
 ### Project-Specific Documentation
 - [`nostr-implementation-fixes-2025.md`](./nostr-implementation-fixes-2025.md) - **ONLY** source of truth for NostrSDK 0.3.0 API patterns. Contains actual working code that compiles and runs.
+- [`roadmap.md`](./roadmap.md) - Comprehensive platform development roadmap with MVP specifications
+
+## MVP Requirements
+
+### Core Platform Features
+The MVP focuses on enabling fitness organizations and influencers to monetize their audience:
+
+#### Must Have for MVP Launch
+- [x] **Authentication**: Apple Sign-In + RUNSTR login with secure key storage
+- [x] **HealthKit Sync**: Universal workout tracking from all fitness apps
+- [ ] **Subscription Tiers**: Free, Member ($3.99), Captain ($19.99)
+- [ ] **Team Platform**: Create/join teams with chat and challenges
+- [ ] **Virtual Events**: Ticketed fitness competitions with leaderboards
+- [ ] **Streak Rewards**: Daily workout bonuses (21-100 sats)
+- [ ] **Lightning Integration**: Zebedee for Bitcoin rewards and payments
+- [ ] **Captain Earnings**: $1 per member monthly revenue tracking
+
+#### UI/UX Requirements
+- **Dashboard**: Activity sync, streak counter, team updates
+- **Teams Tab**: Discover teams, join, team page with chat/challenges
+- **Events Tab**: Browse virtual events, register, view leaderboards
+- **League Tab**: "Season 2 Coming Soon" placeholder
+- **Settings**: Subscription management, account security
+
+#### Platform Differentiators
+- **No Music Tab**: Removed as requested, focus on core platform
+- **Universal Sync**: Works with any fitness app through HealthKit
+- **Revenue Sharing**: Transparent revenue distribution to captains
+- **Event Monetization**: 100% ticket revenue for organizations
+- **Real Bitcoin**: Lightning/Cashu integration for actual rewards
+
+### Platform Business Model
+RUNSTR operates as a marketplace connecting fitness organizations with members:
+
+1. **Organizations** create teams and events to generate revenue
+2. **Members** subscribe to teams for $3.99/month (revenue splits 4 ways)
+3. **Virtual Events** provide additional revenue through ticket sales
+4. **Bitcoin Rewards** incentivize member engagement and retention
 
 ## Production Readiness Status
 

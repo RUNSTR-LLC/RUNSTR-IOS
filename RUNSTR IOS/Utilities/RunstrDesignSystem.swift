@@ -5,7 +5,9 @@ extension Color {
     // Primary colors from main RUNSTR project
     static let runstrBackground = Color(hex: "#242424")
     static let runstrCardBackground = Color(hex: "#2a2a2a")
+    static let runstrDark = Color(hex: "#1a1a1a")
     static let runstrAccent = Color(hex: "#646cff")
+    static let runstrOrange = Color(hex: "#FF6B35")
     static let runstrWhite = Color.white
     static let runstrGray = Color(hex: "#9ca3af")
     static let runstrGrayLight = Color(hex: "#6b7280")
@@ -47,6 +49,8 @@ extension Color {
 extension Font {
     // RUNSTR font hierarchy
     static let runstrTitle = Font.system(size: 24, weight: .bold, design: .default)
+    static let runstrTitle2 = Font.system(size: 22, weight: .bold, design: .default)
+    static let runstrTitle3 = Font.system(size: 20, weight: .semibold, design: .default)
     static let runstrHeadline = Font.system(size: 20, weight: .semibold, design: .default)
     static let runstrSubheadline = Font.system(size: 18, weight: .medium, design: .default)
     static let runstrBody = Font.system(size: 16, weight: .regular, design: .default)
@@ -90,6 +94,38 @@ struct RunstrCard: ViewModifier {
 }
 
 // Button styles
+struct RunstrPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.runstrBodyMedium)
+            .foregroundColor(.runstrBackground)
+            .padding(.horizontal, RunstrSpacing.lg)
+            .padding(.vertical, RunstrSpacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: RunstrRadius.sm)
+                    .fill(Color.runstrWhite)
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+    }
+}
+
+struct RunstrSecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.runstrBodyMedium)
+            .foregroundColor(.runstrWhite)
+            .padding(.horizontal, RunstrSpacing.lg)
+            .padding(.vertical, RunstrSpacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: RunstrRadius.sm)
+                    .stroke(Color.runstrGray, lineWidth: 1)
+            )
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+    }
+}
+
 struct RunstrPrimaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

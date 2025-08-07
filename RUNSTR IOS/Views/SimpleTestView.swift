@@ -3,7 +3,7 @@ import SwiftUI
 struct SimpleTestView: View {
     @EnvironmentObject var authService: AuthenticationService
     @State private var buttonTapped = false
-    @State private var nip46Status = "Not tested"
+    @State private var authStatus = "Not tested"
     
     var body: some View {
         VStack(spacing: 20) {
@@ -12,7 +12,7 @@ struct SimpleTestView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.orange)
             
-            Text("iOS App Test - NIP-46 Integration")
+            Text("iOS App Test - Login System")
                 .font(.headline)
                 .foregroundColor(.gray)
             
@@ -32,31 +32,37 @@ struct SimpleTestView: View {
                 .background(Color.gray)
             
             VStack(spacing: 16) {
-                Text("nsec bunker Integration Test")
+                Text("Authentication Test")
                     .font(.headline)
                     .foregroundColor(.white)
                 
-                Text("Status: \(nip46Status)")
+                Text("Status: \(authStatus)")
                     .font(.body)
                     .foregroundColor(.gray)
                 
-                if let connectionManager = authService.nip46ConnectionManager {
-                    Text("Connection: \(connectionManager.displayStatus)")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                }
-                
-                Button("Test nsec bunker Sign-In") {
-                    Task {
-                        nip46Status = "Testing..."
-                        await testNsecBunkerSignIn()
+                HStack(spacing: 16) {
+                    Button("Test Apple Login") {
+                        Task {
+                            authStatus = "Testing Apple Sign-In..."
+                            await testAppleSignIn()
+                        }
                     }
+                    .padding()
+                    .background(Color.white)
+                    .foregroundColor(.black)
+                    .cornerRadius(10)
+                    .disabled(authService.isLoading)
+                    
+                    Button("Test RUNSTR Login") {
+                        authStatus = "Testing RUNSTR Sign-In..."
+                        testRunstrSignIn()
+                    }
+                    .padding()
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                    .disabled(authService.isLoading)
                 }
-                .padding()
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .disabled(authService.isLoading)
                 
                 if authService.isAuthenticated {
                     VStack(spacing: 8) {
@@ -68,7 +74,23 @@ struct SimpleTestView: View {
                             Text("Method: \(user.loginMethod.rawValue)")
                                 .font(.caption)
                                 .foregroundColor(.gray)
+                            
+                            Text("npub: \(user.displayNostrPublicKey)")
+                                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                                .foregroundColor(.blue)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
+                        
+                        Button("Sign Out") {
+                            authService.signOut()
+                            authStatus = "Signed out"
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
                     }
                 }
             }
@@ -78,13 +100,14 @@ struct SimpleTestView: View {
         .background(Color.black)
     }
     
-    private func testNsecBunkerSignIn() async {
-        do {
-            await authService.signInWithNsecBunker()
-            nip46Status = authService.isAuthenticated ? "Success!" : "Failed to authenticate"
-        } catch {
-            nip46Status = "Error: \(error.localizedDescription)"
-        }
+    private func testAppleSignIn() async {
+        authService.signInWithApple()
+        authStatus = authService.isAuthenticated ? "Success!" : "Apple Sign-In initiated"
+    }
+    
+    private func testRunstrSignIn() {
+        authService.signInWithRunstr()
+        authStatus = authService.isAuthenticated ? "Success!" : "RUNSTR Sign-In completed"
     }
 }
 

@@ -8,6 +8,18 @@ struct WalletView: View {
     @State private var showingCashuSend = false
     @State private var showingCashuReceive = false
     @State private var showingCashuWithdraw = false
+    @State private var showingWeeklyRewards = false
+    
+    // Mock data for weekly rewards
+    @State private var mockWeeklyRewards: [DayReward] = [
+        DayReward(day: "Mon", activity: "Running", reward: 50, completed: true),
+        DayReward(day: "Tue", activity: "Cycling", reward: 50, completed: true),
+        DayReward(day: "Wed", activity: nil, reward: 0, completed: false),
+        DayReward(day: "Thu", activity: "Walking", reward: 50, completed: true),
+        DayReward(day: "Fri", activity: "Running", reward: 50, completed: true),
+        DayReward(day: "Sat", activity: nil, reward: 0, completed: false),
+        DayReward(day: "Sun", activity: nil, reward: 0, completed: false)
+    ]
     
     var body: some View {
         VStack(spacing: 0) {
@@ -18,6 +30,8 @@ struct WalletView: View {
                     balanceSection
                     
                     actionButtonsSection
+                    
+                    weeklyRewardsSection
                     
                     transactionsSection
                 }
@@ -59,42 +73,32 @@ struct WalletView: View {
     private var balanceSection: some View {
         VStack(spacing: 16) {
             VStack(spacing: 8) {
-                Text("Cashu Balance")
+                Text("Balance")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.gray)
                 
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: "bitcoinsign.circle.fill")
-                        .foregroundColor(.orange)
-                        .font(.title2)
-                    
-                    Text(self.formatSats(cashuService.balance))
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white)
-                }
-                
-                Text("≈ $\(String(format: "%.2f", self.convertToFiat(sats: cashuService.balance)))")
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundColor(.gray)
+                Text("2,500")
+                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
             }
             .padding(.vertical, 24)
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 2)
-                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
             )
             
             if let errorMessage = cashuService.errorMessage {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(.white)
                     
                     Text(errorMessage)
                         .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(.orange)
+                        .foregroundColor(.white)
                 }
                 .padding(12)
-                .background(Color.orange.opacity(0.1))
+                .background(Color.white.opacity(0.1))
                 .cornerRadius(8)
             }
         }
@@ -103,15 +107,15 @@ struct WalletView: View {
     private var actionButtonsSection: some View {
         HStack(spacing: 12) {
             WalletActionButton(
-                title: "Send Tokens",
+                title: "Send",
                 icon: "arrow.up.circle.fill",
-                color: .orange
+                color: .white
             ) {
                 showingCashuSend = true
             }
             
             WalletActionButton(
-                title: "Receive Tokens",
+                title: "Receive",
                 icon: "arrow.down.circle.fill",
                 color: .green
             ) {
@@ -128,6 +132,133 @@ struct WalletView: View {
         }
     }
     
+    private var weeklyRewardsSection: some View {
+        VStack(spacing: 20) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showingWeeklyRewards.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("Weekly Rewards")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(.white)
+                    
+                    Text("(\(mockWeeklyRewards.filter { $0.completed }.reduce(0) { $0 + $1.reward }))")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.gray)
+                    
+                    Spacer()
+                    
+                    Image(systemName: showingWeeklyRewards ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                        .animation(.easeInOut(duration: 0.3), value: showingWeeklyRewards)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if showingWeeklyRewards {
+                VStack(spacing: 1) {
+                    // Weekly summary
+                    HStack {
+                        Text("This Week")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Text("\(mockWeeklyRewards.filter { $0.completed }.count) workouts • \(mockWeeklyRewards.filter { $0.completed }.reduce(0) { $0 + $1.reward }) earned")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(.gray)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(0.02))
+                    
+                    // Daily breakdown
+                    ForEach(mockWeeklyRewards, id: \.day) { dayReward in
+                        HStack {
+                            Text(dayReward.day)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 40, alignment: .leading)
+                            
+                            if let activity = dayReward.activity {
+                                HStack(spacing: 8) {
+                                    Image(systemName: getActivityIcon(for: activity))
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.gray)
+                                    
+                                    Text(activity)
+                                        .font(.system(size: 14, weight: .regular))
+                                        .foregroundColor(.gray)
+                                }
+                            } else {
+                                Text("No workout")
+                                    .font(.system(size: 14, weight: .regular))
+                                    .foregroundColor(.gray.opacity(0.5))
+                            }
+                            
+                            Spacer()
+                            
+                            if dayReward.completed {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.green)
+                                    
+                                    Text("+\(dayReward.reward)")
+                                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                                        .foregroundColor(.green)
+                                }
+                            } else {
+                                Text("-")
+                                    .font(.system(size: 14, weight: .regular))
+                                    .foregroundColor(.gray.opacity(0.5))
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            Rectangle()
+                                .fill(dayReward.completed ? Color.green.opacity(0.05) : Color.white.opacity(0.02))
+                        )
+                    }
+                    
+                    // Streak bonus info
+                    HStack {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                        
+                        Text("Current Streak: 4 days")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        Text("+20 bonus")
+                            .font(.system(size: 14, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(0.1))
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+    
+    private func getActivityIcon(for activity: String) -> String {
+        switch activity.lowercased() {
+        case "running": return "figure.run"
+        case "cycling": return "bicycle"
+        case "walking": return "figure.walk"
+        case "swimming": return "figure.pool.swim"
+        default: return "figure.run"
+        }
+    }
+    
     private var transactionsSection: some View {
         VStack(spacing: 20) {
             HStack {
@@ -139,7 +270,7 @@ struct WalletView: View {
             
             if cashuService.pendingOperations.isEmpty && cashuService.balance == 0 {
                 VStack(spacing: 16) {
-                    Image(systemName: "bitcoinsign.circle")
+                    Image(systemName: "creditcard.circle")
                         .font(.system(size: 48))
                         .foregroundColor(.gray)
                     
@@ -147,7 +278,7 @@ struct WalletView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.gray)
                     
-                    Text("Start earning Bitcoin by completing workouts!")
+                    Text("Start earning rewards by completing workouts!")
                         .font(.system(size: 14, weight: .regular))
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
@@ -171,21 +302,13 @@ struct WalletView: View {
     }
     
     // Helper methods for formatting
-    private func formatSats(_ sats: Int) -> String {
-        if sats >= 100_000_000 {
-            let btc = Double(sats) / 100_000_000
-            return String(format: "₿%.8f", btc)
-        } else if sats >= 1000 {
-            let k = Double(sats) / 1000
-            return String(format: "%.1fk sats", k)
+    private func formatBalance(_ amount: Int) -> String {
+        if amount >= 1000 {
+            let k = Double(amount) / 1000
+            return String(format: "%.1fk", k)
         } else {
-            return "\(sats) sats"
+            return "\(amount)"
         }
-    }
-    
-    private func convertToFiat(sats: Int) -> Double {
-        // Mock conversion rate: 1 BTC = $40,000, so 1 sat = $0.0004
-        return Double(sats) * 0.0004
     }
 }
 
@@ -233,7 +356,7 @@ struct CashuOperationRow: View {
     private var operationColor: Color {
         switch operation.type {
         case .mint, .receive: return .green
-        case .melt, .send: return operation.status == .failed ? .red : .orange
+        case .melt, .send: return operation.status == .failed ? .red : .white
         }
     }
     
@@ -274,7 +397,7 @@ struct CashuOperationRow: View {
             Spacer()
             
             VStack(alignment: .trailing, spacing: 4) {
-                Text("\(operation.type == .send || operation.type == .melt ? "-" : "+")\(operation.amount) sats")
+                Text("\(operation.type == .send || operation.type == .melt ? "-" : "+")\(operation.amount)")
                     .font(.system(size: 16, weight: .medium, design: .monospaced))
                     .foregroundColor(operationColor)
                 
@@ -296,6 +419,13 @@ struct CashuOperationRow: View {
                 .fill(Color.white.opacity(0.02))
         )
     }
+}
+
+struct DayReward {
+    let day: String
+    let activity: String?
+    let reward: Int
+    let completed: Bool
 }
 
 struct TransactionRow: View {

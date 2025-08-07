@@ -1,26 +1,18 @@
 import Foundation
 import AuthenticationServices
 import Security
+import NostrSDK
 
 class AuthenticationService: NSObject, ObservableObject {
     @Published var isAuthenticated = false
     @Published var currentUser: User?
     @Published var isLoading = false
-    @Published var nip46ConnectionManager: NIP46ConnectionManager?
     
     private let keychainService = "app.runstr.keychain"
-    
-    // Reference to NostrService for connection setup
-    weak var nostrService: NostrService?
     
     override init() {
         super.init()
         checkAuthenticationStatus()
-    }
-    
-    /// Configure NostrService reference for NIP-46 integration
-    func configureNostrService(_ service: NostrService) {
-        nostrService = service
     }
     
     func signInWithApple() {
@@ -38,125 +30,92 @@ class AuthenticationService: NSObject, ObservableObject {
         authorizationController.performRequests()
     }
     
-    func signInWithNsecBunker() async {
-        print("🚀 Starting nsec bunker sign-in")
+    func signInWithRunstr() {
+        print("🚀 Starting RUNSTR Sign-In with local key storage")
         isLoading = true
         
-        do {
-            // Initialize NIP-46 connection manager on MainActor
-            let connectionManager = await NIP46ConnectionManager()
-            await MainActor.run {
-                nip46ConnectionManager = connectionManager
-            }
-            
-            // Attempt connection to nsec bunker
-            await connectionManager.connect()
-            
-            // Check if connection was successful
-            if await connectionManager.isConnected {
-                await createNsecBunkerUser(connectionManager: connectionManager)
-            } else {
-                throw AuthenticationError.nsecBunkerConnectionFailed
-            }
-            
-        } catch {
-            print("❌ nsec bunker sign-in failed: \(error)")
-            await MainActor.run {
-                self.isLoading = false
-                // Handle error appropriately in UI
-            }
-        }
-    }
-    
-    func signInWithNostr(npub: String) {
-        print("🚀 Starting legacy Nostr Sign-In with npub: \(npub)")
-        isLoading = true
-        
-        // Legacy implementation for manual npub input
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.createNostrUser(mainNpub: npub)
-        }
-    }
-    
-    
-    private func createNsecBunkerUser(connectionManager: NIP46ConnectionManager) async {
-        print("✅ Creating nsec bunker user")
-        
-        let connectionInfo = await connectionManager.getConnectionInfo()
-        
-        guard let bunkerPublicKey = connectionInfo.publicKey else {
-            print("❌ No bunker public key available")
-            await MainActor.run {
-                self.isLoading = false
-            }
-            return
-        }
-        
-        // Create user with nsec bunker connection
-        let user = User(
-            bunkerPublicKey: bunkerPublicKey,
-            authenticationMethod: .nsecBunker,
-            connectionManager: connectionManager
-        )
-        
-        print("✅ nsec bunker user object created")
-        
-        saveUserToKeychain(user)
-        print("✅ nsec bunker user saved to keychain")
-        
-        // Configure NostrService with NIP-46 connection manager
-        if let nostrService = nostrService {
-            await nostrService.setNIP46ConnectionManager(connectionManager)
-        }
-        
-        await MainActor.run {
-            print("✅ Setting nsec bunker authentication state")
-            self.currentUser = user
-            self.isAuthenticated = true
-            self.isLoading = false
-            print("✅ nsec bunker authentication complete - isAuthenticated: \(self.isAuthenticated)")
-        }
-    }
-    
-    private func createNostrUser(mainNpub: String) {
-        print("✅ Creating Nostr user for npub: \(mainNpub)")
-        
-        // Generate RUNSTR-specific keys for workout storage
-        let runstrNostrKeys = NostrKeyPair.generate()
+        // Generate new Nostr keys for RUNSTR login
+        let runstrKeys = NostrKeyPair.generate()
         print("✅ RUNSTR Nostr keys generated")
         
-        saveNostrKeysToKeychain(runstrNostrKeys)
-        print("✅ RUNSTR keys saved to keychain")
+        // Save keys locally (not in Keychain)
+        saveRunstrKeysLocally(runstrKeys)
+        print("✅ RUNSTR keys saved locally")
         
-        // Mock Nostr profile data - in production, fetch from relays
-        let mockProfile = NostrProfile(
-            displayName: "Nostr Runner",
-            about: "Bitcoin fitness enthusiast",
-            picture: nil,
-            banner: nil,
-            nip05: nil
-        )
-        
-        let user = User(
-            mainNostrPublicKey: mainNpub,
-            runstrNostrKeys: runstrNostrKeys,
-            profile: mockProfile
-        )
-        print("✅ Nostr user object created")
+        // Create user with RUNSTR login method
+        let user = User(runstrNostrKeys: runstrKeys)
+        print("✅ RUNSTR user object created")
         
         saveUserToKeychain(user)
-        print("✅ Nostr user saved to keychain")
+        print("✅ RUNSTR user saved to keychain")
         
         DispatchQueue.main.async {
-            print("✅ Setting Nostr authentication state")
+            print("✅ Setting RUNSTR authentication state")
             self.currentUser = user
             self.isAuthenticated = true
             self.isLoading = false
-            print("✅ Nostr authentication complete - isAuthenticated: \(self.isAuthenticated)")
+            print("✅ RUNSTR authentication complete - isAuthenticated: \(self.isAuthenticated)")
         }
     }
     
+    func signInWithNsec(_ nsec: String) -> Bool {
+        print("🚀 Starting RUNSTR Sign-In with existing nsec")
+        isLoading = true
+        
+        // Validate nsec format
+        guard nsec.hasPrefix("nsec1") && nsec.count > 10 else {
+            print("❌ Invalid nsec format")
+            isLoading = false
+            return false
+        }
+        
+        // Convert nsec to keypair using NostrSDK
+        guard let keypair = Keypair(nsec: nsec) else {
+            print("❌ Failed to create Keypair from nsec")
+            isLoading = false
+            return false
+        }
+        
+        let runstrKeys = NostrKeyPair(
+            privateKey: nsec,
+            publicKey: keypair.publicKey.npub
+        )
+        
+        print("✅ RUNSTR keys restored from nsec")
+        
+        // Save keys locally (not in Keychain)
+        saveRunstrKeysLocally(runstrKeys)
+        print("✅ Restored keys saved locally")
+        
+        // Create user with RUNSTR login method
+        let user = User(runstrNostrKeys: runstrKeys)
+        print("✅ RUNSTR user object created from restored keys")
+        
+        saveUserToKeychain(user)
+        print("✅ RUNSTR user saved to keychain")
+        
+        DispatchQueue.main.async {
+            print("✅ Setting RUNSTR authentication state with restored account")
+            self.currentUser = user
+            self.isAuthenticated = true
+            self.isLoading = false
+            print("✅ RUNSTR account restoration complete - isAuthenticated: \(self.isAuthenticated)")
+        }
+        
+        return true
+    }
+    
+    
+    
+    
+    
+    
     func signOut() {
+        // Clear local storage for RUNSTR users
+        if let user = currentUser, user.loginMethod == .runstr {
+            clearRunstrKeysFromLocal()
+        }
+        
         currentUser = nil
         isAuthenticated = false
         clearUserDataFromKeychain()
@@ -213,6 +172,75 @@ class AuthenticationService: NSObject, ObservableObject {
         
         SecItemDelete(query as CFDictionary)
     }
+    
+    // MARK: - Local Storage Methods (for RUNSTR login)
+    
+    private func saveRunstrKeysLocally(_ keyPair: NostrKeyPair) {
+        let keyData: [String: String] = [
+            "privateKey": keyPair.privateKey,
+            "publicKey": keyPair.publicKey
+        ]
+        
+        do {
+            let data = try JSONEncoder().encode(keyData)
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let keysURL = documentsPath.appendingPathComponent("runstr_keys.json")
+            
+            try data.write(to: keysURL)
+            print("✅ RUNSTR keys saved to local storage: \(keysURL.path)")
+        } catch {
+            print("❌ Failed to save RUNSTR keys locally: \(error)")
+        }
+    }
+    
+    private func loadRunstrKeysFromLocal() -> NostrKeyPair? {
+        do {
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let keysURL = documentsPath.appendingPathComponent("runstr_keys.json")
+            
+            let data = try Data(contentsOf: keysURL)
+            let keyData = try JSONDecoder().decode([String: String].self, from: data)
+            
+            guard let privateKey = keyData["privateKey"],
+                  let publicKey = keyData["publicKey"] else {
+                return nil
+            }
+            
+            return NostrKeyPair(privateKey: privateKey, publicKey: publicKey)
+        } catch {
+            print("❌ Failed to load RUNSTR keys from local storage: \(error)")
+            return nil
+        }
+    }
+    
+    func exportRunstrPrivateKey() -> String? {
+        guard let user = currentUser, user.loginMethod == .runstr else {
+            return nil
+        }
+        
+        if let localKeys = loadRunstrKeysFromLocal() {
+            return localKeys.privateKey
+        } else {
+            // Fallback to user's stored private key
+            return user.runstrNostrPrivateKey
+        }
+    }
+    
+    private func clearRunstrKeysFromLocal() {
+        do {
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let keysURL = documentsPath.appendingPathComponent("runstr_keys.json")
+            
+            if FileManager.default.fileExists(atPath: keysURL.path) {
+                try FileManager.default.removeItem(at: keysURL)
+                print("✅ RUNSTR keys cleared from local storage")
+            }
+        } catch {
+            print("❌ Failed to clear RUNSTR keys from local storage: \(error)")
+        }
+    }
+    
+    // MARK: - Keychain Methods (for Apple login)
     
     private func saveNostrKeysToKeychain(_ keyPair: NostrKeyPair) {
         let privateKeyData = keyPair.privateKey.data(using: .utf8)!
@@ -301,18 +329,15 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
 // MARK: - Authentication Errors
 
 enum AuthenticationError: LocalizedError {
-    case nsecBunkerConnectionFailed
-    case invalidBunkerResponse
     case userCreationFailed
+    case localStorageError
     
     var errorDescription: String? {
         switch self {
-        case .nsecBunkerConnectionFailed:
-            return "Failed to connect to nsec bunker"
-        case .invalidBunkerResponse:
-            return "Invalid response from nsec bunker"
         case .userCreationFailed:
             return "Failed to create user account"
+        case .localStorageError:
+            return "Failed to save user data locally"
         }
     }
 }

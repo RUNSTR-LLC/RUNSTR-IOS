@@ -18,6 +18,7 @@ struct RUNSTR_IOSApp: App {
     @StateObject private var cashuService = CashuService()
     @StateObject private var streakService = StreakService()
     @StateObject private var workoutStorage = WorkoutStorage()
+    @StateObject private var teamService = TeamService()
     
     init() {
         // Configuration will be done in onAppear
@@ -35,6 +36,7 @@ struct RUNSTR_IOSApp: App {
                 .environmentObject(cashuService)
                 .environmentObject(streakService)
                 .environmentObject(workoutStorage)
+                .environmentObject(teamService)
                 .preferredColorScheme(.dark)
                 .task {
                     // Configure workout session with services first
@@ -43,14 +45,22 @@ struct RUNSTR_IOSApp: App {
                         locationService: locationService
                     )
                     
-                    // Configure authentication service with NostrService reference
-                    authService.configureNostrService(nostrService)
+                    // Authentication service no longer needs NostrService configuration
                     
                     // Request permissions on app startup
                     await requestInitialPermissions()
                     
                     // Initialize Cashu connection
                     await cashuService.connectToMint()
+                    
+                    // Initialize team stats aggregator
+                    teamService.setupStatsAggregator(
+                        healthKitService: healthKitService,
+                        workoutStorage: workoutStorage
+                    )
+                    
+                    // Schedule periodic team stats updates
+                    teamService.scheduleStatsUpdates()
                 }
         }
     }

@@ -4,8 +4,8 @@ import AuthenticationServices
 struct OnboardingView: View {
     @EnvironmentObject var authService: AuthenticationService
     @State private var currentPage = 0
-    @State private var showingNostrLogin = false
-    @State private var npubInput = ""
+    @State private var showingRunstrLogin = false
+    @State private var showingNsecImport = false
     
     private let onboardingPages = [
         OnboardingPage(
@@ -60,17 +60,16 @@ struct OnboardingView: View {
                         .background(Color.white)
                         .cornerRadius(2)
                     }
+                    .disabled(authService.isLoading)
                     
-                    // nsec bunker Sign-In Button (Primary Nostr option)
+                    // RUNSTR Sign-In Button
                     Button {
-                        Task {
-                            await authService.signInWithNsecBunker()
-                        }
+                        showingRunstrLogin = true
                     } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: "key.radiowaves.forward")
+                            Image(systemName: "key.horizontal")
                                 .font(.title3)
-                            Text("Continue with nsec bunker")
+                            Text("Continue with RUNSTR")
                                 .font(.system(size: 16, weight: .medium))
                         }
                         .foregroundColor(.white)
@@ -81,30 +80,14 @@ struct OnboardingView: View {
                     }
                     .disabled(authService.isLoading)
                     
-                    // Legacy Nostr Sign-In Button
+                    // Advanced/Restore Button
                     Button {
-                        showingNostrLogin = true
+                        showingNsecImport = true
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "link")
-                                .font(.title3)
-                            Text("Continue with npub")
-                                .font(.system(size: 16, weight: .medium))
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(
-                            RoundedRectangle(cornerRadius: 2)
-                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                        )
+                        Text("Advanced: Restore with nsec")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.gray)
                     }
-                    
-                    Button("Continue with Email") {
-                        // Email signup would go here
-                    }
-                    .foregroundColor(.gray)
-                    .font(.system(size: 14, weight: .medium))
                     .padding(.vertical, 8)
                 } else {
                     Button("Next") {
@@ -134,33 +117,140 @@ struct OnboardingView: View {
         .background(Color.black)
         .foregroundColor(.white)
         .ignoresSafeArea(edges: .bottom)
-        .sheet(isPresented: $showingNostrLogin) {
-            NostrLoginView(npubInput: $npubInput) {
-                authService.signInWithNostr(npub: npubInput)
-                showingNostrLogin = false
+        .sheet(isPresented: $showingRunstrLogin) {
+            RunstrSecurityWarningView {
+                authService.signInWithRunstr()
+                showingRunstrLogin = false
+            }
+        }
+        .sheet(isPresented: $showingNsecImport) {
+            NsecImportView { nsec in
+                let success = authService.signInWithNsec(nsec)
+                if success {
+                    showingNsecImport = false
+                }
+                return success
             }
         }
     }
 }
 
-struct NostrLoginView: View {
-    @Binding var npubInput: String
-    let onLogin: () -> Void
+struct RunstrSecurityWarningView: View {
+    let onAccept: () -> Void
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         NavigationView {
             VStack(spacing: 32) {
                 VStack(spacing: 16) {
-                    Image(systemName: "link.circle.fill")
+                    Image(systemName: "exclamationmark.shield.fill")
                         .font(.system(size: 60))
-                        .foregroundColor(.white)
+                        .foregroundColor(.orange)
                     
-                    Text("Manual Nostr Connection")
+                    Text("Important Security Notice")
                         .font(.system(size: 24, weight: .bold))
                         .foregroundColor(.white)
                     
-                    Text("Enter your npub for legacy Nostr integration. For better security, use nsec bunker instead.")
+                    Text("RUNSTR will generate a new Nostr identity for you. Your private key will be stored locally on your device.")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                }
+                
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.title3)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Self-Custody")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                            Text("You have full control over your keys")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.yellow)
+                            .font(.title3)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Backup Responsibility")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                            Text("Write down your private key somewhere safe. If you lose it, your account cannot be recovered.")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "gear.circle.fill")
+                            .foregroundColor(.blue)
+                            .font(.title3)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Export Available")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                            Text("You can export your private key from Settings after login")
+                                .font(.system(size: 14))
+                                .foregroundColor(.gray)
+                        }
+                    }
+                }
+                
+                Button {
+                    onAccept()
+                } label: {
+                    Text("I Understand, Create Account")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color.orange)
+                        .cornerRadius(2)
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 40)
+            .background(Color.black)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+        }
+    }
+}
+
+struct NsecImportView: View {
+    let onImport: (String) -> Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var nsecInput = ""
+    @State private var errorMessage = ""
+    @State private var isImporting = false
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 32) {
+                VStack(spacing: 16) {
+                    Image(systemName: "key.horizontal.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.orange)
+                    
+                    Text("Restore RUNSTR Account")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text("Enter your nsec private key to restore your RUNSTR account. This should be the nsec you backed up when you first created your account.")
                         .font(.system(size: 16, weight: .regular))
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
@@ -168,11 +258,11 @@ struct NostrLoginView: View {
                 
                 VStack(spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("NOSTR PUBLIC KEY")
+                        Text("PRIVATE KEY (nsec)")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.gray)
                         
-                        TextField("npub1...", text: $npubInput)
+                        TextField("nsec1...", text: $nsecInput)
                             .textFieldStyle(PlainTextFieldStyle())
                             .font(.system(size: 16, weight: .regular, design: .monospaced))
                             .foregroundColor(.white)
@@ -184,21 +274,53 @@ struct NostrLoginView: View {
                             )
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
+                        
+                        if !errorMessage.isEmpty {
+                            Text(errorMessage)
+                                .font(.system(size: 12))
+                                .foregroundColor(.red)
+                        }
                     }
                     
                     Button {
-                        onLogin()
+                        isImporting = true
+                        errorMessage = ""
+                        
+                        let success = onImport(nsecInput)
+                        if !success {
+                            errorMessage = "Invalid nsec format. Please check your private key and try again."
+                        }
+                        
+                        isImporting = false
                     } label: {
-                        Text("Connect Account")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
-                            .background(Color.white)
-                            .cornerRadius(2)
+                        HStack {
+                            if isImporting {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .black))
+                                    .scaleEffect(0.8)
+                            }
+                            Text(isImporting ? "Restoring..." : "Restore Account")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color.orange)
+                        .cornerRadius(2)
                     }
-                    .disabled(npubInput.isEmpty || !npubInput.hasPrefix("npub1"))
-                    .opacity(npubInput.isEmpty || !npubInput.hasPrefix("npub1") ? 0.5 : 1.0)
+                    .disabled(nsecInput.isEmpty || !nsecInput.hasPrefix("nsec1") || isImporting)
+                    .opacity((nsecInput.isEmpty || !nsecInput.hasPrefix("nsec1") || isImporting) ? 0.5 : 1.0)
+                }
+                
+                VStack(spacing: 8) {
+                    Text("⚠️ Security Notice")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.yellow)
+                    
+                    Text("Your nsec is your master key. Never share it with anyone. RUNSTR will store it locally on your device.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
                 }
                 
                 Spacer()

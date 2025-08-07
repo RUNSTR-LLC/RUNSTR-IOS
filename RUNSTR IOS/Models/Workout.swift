@@ -14,6 +14,7 @@ struct Workout: Identifiable, Codable {
     var calories: Double?
     var averageHeartRate: Double?
     var maxHeartRate: Double?
+    var steps: Int?
     var route: [CLLocationCoordinate2D]?
     var elevationGain: Double?
     let weather: WeatherCondition?
@@ -35,6 +36,7 @@ struct Workout: Identifiable, Codable {
         self.calories = nil
         self.averageHeartRate = nil
         self.maxHeartRate = nil
+        self.steps = nil
         self.route = nil
         self.elevationGain = nil
         self.weather = nil
@@ -153,8 +155,10 @@ class WorkoutSession: ObservableObject {
     @Published var elapsedTime: TimeInterval = 0
     @Published var currentDistance: Double = 0
     @Published var currentPace: Double = 0
+    @Published var currentSpeed: Double = 0
     @Published var currentHeartRate: Double? = nil
     @Published var currentCalories: Double = 0
+    @Published var currentSteps: Int = 0
     @Published var locations: [CLLocation] = []
     @Published var isGPSReady: Bool = false
     @Published var accuracy: Double = 0
@@ -281,6 +285,7 @@ class WorkoutSession: ObservableObject {
             workout.averagePace = calculateAveragePace()
             workout.rewardAmount = calculateReward()
             workout.calories = currentCalories
+            workout.steps = currentSteps
             workout.route = locations.map { $0.coordinate }
             workout.elevationGain = calculateElevationGain()
             workout.endTime = Date()
@@ -303,6 +308,7 @@ class WorkoutSession: ObservableObject {
         if let locationService = locationService {
             currentDistance = locationService.totalDistance
             currentPace = locationService.currentPace
+            currentSpeed = locationService.currentSpeed
             locations = locationService.route
             isGPSReady = locationService.isGPSReady
             accuracy = locationService.accuracy
@@ -311,6 +317,7 @@ class WorkoutSession: ObservableObject {
         if let healthKitService = healthKitService {
             currentHeartRate = healthKitService.currentHeartRate
             currentCalories = healthKitService.currentCalories
+            currentSteps = healthKitService.currentSteps
         }
     }
     

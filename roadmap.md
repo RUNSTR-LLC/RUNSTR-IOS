@@ -1,477 +1,446 @@
-# Comprehensive iOS Development Roadmap for RUNSTR
+# RUNSTR Platform Roadmap - Fitness Club Monetization Platform
 
 ## Executive Summary
 
-This roadmap outlines a phased approach for developing RUNSTR, a cardio tracking app with Bitcoin/Lightning rewards and team features, targeting TestFlight release within 6 months. The strategy prioritizes core fitness functionality and Apple compliance while gradually introducing advanced Nostr and cryptocurrency features.
+RUNSTR transforms fitness communities into thriving businesses by providing infrastructure for clubs to monetize through subscriptions and virtual events, while members earn Bitcoin rewards for their workouts. This roadmap outlines the path to MVP launch focusing on platform capabilities that enable fitness organizations and influencers to generate recurring revenue.
 
-## Phase 1: Foundation and Core Architecture (Weeks 1-4)
+## Platform Vision
 
-### Development Environment Setup
+**For Organizations/Influencers**: Turn your fitness following into a sustainable business with monthly recurring revenue and virtual event income.
 
-**Technical Stack Configuration:**
-```swift
-// Package.swift dependencies
-dependencies: [
-    .package(url: "https://github.com/zeugmaster/CashuSwift.git", .upToNextMajor(from: "1.0.0")),
-    .package(url: "https://github.com/nostr-sdk/nostr-sdk-ios.git", .upToNextMajor(from: "0.3.0")),
-    // Activity tracking
-    .package(url: "https://github.com/apple/swift-algorithms", from: "1.0.0")
-]
-```
+**For Members**: Keep using your favorite fitness apps (Apple Watch, Garmin, Strava) while earning Bitcoin rewards through team memberships and competitions.
 
-**Project Architecture:**
-- **MVVM pattern** with clear separation of concerns
-- **Core Data** for local persistence with CloudKit sync
-- **Combine framework** for reactive programming
-- **SwiftUI** for all UI components
+---
 
-**Key Implementation Steps:**
-1. Set up GitHub repository with CI/CD using GitHub Actions
-2. Configure SwiftLint and SwiftFormat for code consistency
-3. Create modular architecture with separate frameworks:
-   - `RunstrCore`: Business logic and models
-   - `RunstrUI`: SwiftUI views and components
-   - `RunstrNetworking`: API and external service integrations
-   - `RunstrCrypto`: Cashu and Lightning functionality
+## Phase 1: Foundation & Core Infrastructure (Week 1-2)
+**Goal**: Establish robust platform architecture supporting multi-tenant team management
 
-**Apple Developer Account Setup:**
-- Enroll as an **organization** (required for cryptocurrency apps)
-- Configure Sign in with Apple capability
-- Set up App Groups for data sharing between extensions
-- Create StoreKit configuration file for subscription testing
+### Technical Foundation
+- [ ] Configure project for iOS 15.0+ deployment target
+- [ ] Set up modular MVVM architecture with clear service separation
+- [ ] Implement core data models for platform entities
+- [ ] Configure CloudKit for team data synchronization
+- [ ] Set up proper error handling and logging infrastructure
+
+### Authentication System
+- [ ] Apple Sign-In with automatic npub/nsec generation
+- [ ] RUNSTR native login with local key storage
+- [ ] Secure key management using iOS Keychain
+- [ ] Session management and auto-refresh tokens
+- [ ] Account recovery flow with nsec backup
 
 ### Core Data Models
-
 ```swift
-// Core entities
-@Model class Activity {
-    let id: UUID
-    let type: ActivityType // running, walking, cycling
-    let startDate: Date
-    let endDate: Date
-    let distance: Double
-    let calories: Int
-    let route: [CLLocation]?
-    let heartRateData: [HeartRateReading]?
-}
-
-@Model class User {
-    let id: UUID
-    let appleID: String
-    let nostrPublicKey: String?
-    let subscriptionLevel: SubscriptionLevel
-    let currentStreak: Int
-    let totalRewards: Int // in sats
-}
-
-@Model class Team {
-    let id: UUID
-    let name: String
-    let creatorId: UUID
-    let members: [User]
-    let maxSize: Int
-}
+// Platform-centric models
+- User (with subscription status)
+- Team (with captain/member hierarchy)
+- Event (virtual fitness events)
+- Workout (synced from HealthKit)
+- Subscription (tier management)
+- Wallet (Cashu/Lightning integration)
 ```
 
-## Phase 2: Core Fitness Features (Weeks 5-8)
+### HealthKit Integration
+- [ ] Request comprehensive HealthKit permissions
+- [ ] Support all workout types (running, cycling, walking, strength, yoga, swimming)
+- [ ] Real-time workout data sync during activities
+- [ ] Historical workout import capability
+- [ ] Background sync for automatic updates
 
-### Activity Tracking Implementation
+**Deliverables**: 
+- Functioning authentication system
+- HealthKit sync for all workout types
+- Core data persistence layer
 
-**HealthKit Integration:**
-```swift
-class ActivityTracker: ObservableObject {
-    private let healthStore = HKHealthStore()
-    @Published var currentActivity: Activity?
-    @Published var isTracking = false
-    
-    func requestPermissions() async throws {
-        let types: Set<HKSampleType> = [
-            .workoutType(),
-            .quantityType(forIdentifier: .heartRate)!,
-            .quantityType(forIdentifier: .activeEnergyBurned)!,
-            .quantityType(forIdentifier: .distanceWalkingRunning)!
-        ]
-        
-        try await healthStore.requestAuthorization(toShare: types, read: types)
-    }
-    
-    func startTracking(type: ActivityType) {
-        // Implementation with location tracking
-        // Real-time heart rate monitoring
-        // Calorie calculation
-    }
-}
+---
+
+## Phase 2: Subscription & Monetization System (Week 3-4)
+**Goal**: Implement three-tier subscription model with proper payment processing
+
+### Subscription Tiers
+
+#### Free Tier
+- Basic activity tracking
+- View public teams and events
+- Limited workout history (7 days)
+- Minimal streak rewards (1-2 sats)
+
+#### Member Tier ($3.99/month)
+- Full activity tracking & history
+- Join unlimited teams
+- Participate in events and competitions
+- Team chat access
+- Standard streak rewards (21-100 sats)
+- Export workout data
+
+#### Captain Tier ($19.99/month)
+- All Member features
+- Create and manage teams (up to 500 members)
+- Create team events and challenges
+- Earn $1 per team member monthly
+- Team analytics dashboard
+- Custom team branding
+
+#### Organization Tier ($49.99/month)
+- All Captain features
+- Create public virtual events
+- Sell event tickets (keep 100% revenue)
+- Advanced analytics & reporting
+- API access for integrations
+- Priority support
+
+### Payment Infrastructure
+- [ ] StoreKit 2 integration for Apple Pay
+- [ ] Subscription management UI
+- [ ] Receipt validation
+- [ ] Restore purchases functionality
+- [ ] Subscription status tracking
+- [ ] Grace period handling
+
+### Revenue Distribution
+```
+Member Subscription ($3.99):
+- $1.00 → RUNSTR platform
+- $1.00 → Selected team captain
+- $1.00 → Charity (OpenSats/HRF/ALS)
+- $0.99 → Member rewards pool
 ```
 
-**UI Components:**
-- Activity selection screen (running/walking/cycling)
-- Real-time tracking view with map
-- Post-activity summary
-- History list with basic filtering
+**Deliverables**:
+- Working subscription system with Apple Pay
+- Subscription management interface
+- Revenue tracking dashboard for captains
 
-**Streak System (Without Rewards):**
-- Track consecutive days of activity
-- Visual streak counter
-- Local notifications for streak reminders
-- Achievement badges (visual only, no crypto)
+---
 
-## Phase 3: Authentication and User Management (Weeks 9-10)
+## Phase 3: Team Management Platform (Week 5-6)
+**Goal**: Build comprehensive team creation and management system
 
-### Sign in with Apple Implementation
+### Team Creation (Captain/Organization)
+- [ ] Team setup wizard with branding options
+- [ ] Team description and activity focus
+- [ ] Member capacity settings
+- [ ] Team rules and guidelines
+- [ ] Social media integration links
 
-```swift
-struct SignInView: View {
-    @StateObject private var authManager = AuthenticationManager()
-    
-    var body: some View {
-        VStack {
-            SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName, .email]
-            } onCompletion: { result in
-                switch result {
-                case .success(let authorization):
-                    await authManager.handleSignIn(authorization)
-                case .failure(let error):
-                    // Handle error
-                }
-            }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 50)
-            
-            // Secondary Nostr login option (hidden initially)
-            if FeatureFlags.nostrLoginEnabled {
-                Button("Sign in with Nostr") {
-                    // Implement in later phase
-                }
-                .foregroundColor(.secondary)
-            }
-        }
-    }
-}
+### Team Discovery & Joining
+- [ ] Team browse/search interface
+- [ ] Filter by activity type, location, size
+- [ ] Team preview with stats
+- [ ] One-tap join functionality
+- [ ] Team recommendations based on activity
+
+### Team Management Dashboard
+- [ ] Member roster management
+- [ ] Activity leaderboards
+- [ ] Team statistics and analytics
+- [ ] Member engagement metrics
+- [ ] Revenue tracking for captains
+
+### Team Features
+- [ ] Team chat (text-based initially)
+- [ ] Team challenges tab
+- [ ] Shared workout plans
+- [ ] Member achievements
+- [ ] Team announcements
+
+**Deliverables**:
+- Fully functional team creation system
+- Team discovery and joining flow
+- Basic team chat functionality
+
+---
+
+## Phase 4: Virtual Events Platform (Week 7-8)
+**Goal**: Enable organizations to create and monetize virtual fitness events
+
+### Event Creation System
+- [ ] Event setup wizard
+- [ ] Event types (5K, Marathon, Monthly Challenge, etc.)
+- [ ] Ticket pricing configuration
+- [ ] Registration management
+- [ ] Event rules and requirements
+
+### Event Discovery
+- [ ] Public events feed
+- [ ] Filter by type, date, difficulty
+- [ ] Event details page with registration
+- [ ] Upcoming events calendar
+- [ ] Featured events section
+
+### Event Participation
+- [ ] Event registration flow
+- [ ] Payment processing for tickets
+- [ ] Event countdown timers
+- [ ] Live leaderboards during events
+- [ ] Progress tracking
+
+### Event Management (Organizers)
+- [ ] Participant roster
+- [ ] Revenue tracking
+- [ ] Event analytics
+- [ ] Winner selection tools
+- [ ] Prize distribution system
+
+**Deliverables**:
+- Event creation and management system
+- Event discovery and registration
+- Live leaderboard functionality
+
+---
+
+## Phase 5: Rewards & Incentive System (Week 9-10)
+**Goal**: Implement Bitcoin rewards through Lightning/Cashu integration
+
+### Streak Rewards System
+- [ ] Daily workout tracking
+- [ ] Progressive reward schedule (7, 14, 30 days)
+- [ ] Visual streak counter
+- [ ] Streak notifications
+- [ ] Bonus multipliers for consistency
+
+### Cashu Wallet Integration
+- [ ] Wallet creation on signup
+- [ ] Secure seed storage in Keychain
+- [ ] Balance display
+- [ ] Transaction history
+- [ ] Backup/recovery options
+
+### Lightning Integration (Zebedee)
+- [ ] Lightning wallet connection
+- [ ] Send/receive functionality
+- [ ] QR code scanning
+- [ ] Invoice generation
+- [ ] Withdrawal to external wallets
+
+### Reward Distribution
+```
+Daily Streaks:
+- 7 days: 21 sats
+- 14 days: 50 sats
+- 30 days: 100 sats
+
+Event Prizes:
+- 1st place: 40% of prize pool
+- 2nd place: 30% of prize pool
+- 3rd place: 20% of prize pool
+- Participation: 10% distributed
 ```
 
-**User Profile Management:**
-- Basic profile screen
-- Activity statistics dashboard
-- Settings for notifications and privacy
-- Placeholder for future wallet integration
+**Deliverables**:
+- Working Cashu wallet
+- Lightning send/receive
+- Automated streak rewards
 
-## Phase 4: Subscription System (Weeks 11-13)
+---
 
-### StoreKit 2 Integration
+## Phase 6: UI/UX Polish & MVP Completion (Week 11-12)
+**Goal**: Refine user experience and prepare for launch
 
+### Core UI Improvements
+- [ ] Smooth animations and transitions
+- [ ] Loading states and skeletons
+- [ ] Empty states with clear CTAs
+- [ ] Error handling with user feedback
+- [ ] Accessibility improvements
+
+### Dashboard Optimization
+- [ ] Quick action buttons
+- [ ] Activity summary widgets
+- [ ] Team updates feed
+- [ ] Upcoming events carousel
+- [ ] Streak progress indicator
+
+### Performance Optimization
+- [ ] Image caching and lazy loading
+- [ ] Background task optimization
+- [ ] Memory usage optimization
+- [ ] Network request batching
+- [ ] Offline mode support
+
+### Testing & Quality Assurance
+- [ ] Unit test coverage (>70%)
+- [ ] UI testing for critical flows
+- [ ] Beta testing program setup
+- [ ] Crash reporting integration
+- [ ] Analytics implementation
+
+**Deliverables**:
+- Polished, production-ready UI
+- Comprehensive test coverage
+- Beta testing feedback incorporated
+
+---
+
+## MVP Feature Checklist
+
+### ✅ Must Have (MVP)
+- [x] Apple Sign-In / RUNSTR authentication
+- [x] HealthKit workout sync (all types)
+- [ ] 3 subscription tiers (Free, Member $3.99, Captain $19.99)
+- [ ] Team creation and management
+- [ ] Team discovery and joining
+- [ ] Basic team chat
+- [ ] Virtual event creation
+- [ ] Event registration and participation
+- [ ] Live event leaderboards
+- [ ] Streak rewards system
+- [ ] Lightning wallet (Zebedee)
+- [ ] Captain earnings tracking
+
+### 🔄 Nice to Have (Post-MVP)
+- [ ] Organization tier ($49.99)
+- [ ] Advanced team analytics
+- [ ] Video/photo in team chat
+- [ ] Custom workout plans
+- [ ] Garmin integration
+- [ ] Strava integration
+- [ ] Merchandise shop
+- [ ] Corporate wellness programs
+- [ ] AI coaching (Coach Claude)
+- [ ] Apple Watch app
+
+### ❌ Not in MVP
+- [ ] Music integration (removed as requested)
+- [ ] League system (showing "Season 2 Coming Soon")
+- [ ] Complex Nostr features
+- [ ] Android app
+- [ ] Web platform
+
+---
+
+## Technical Architecture
+
+### Frontend Stack
+- **SwiftUI** for all UI components
+- **Combine** for reactive programming
+- **MVVM** architecture pattern
+- **CloudKit** for team data sync
+
+### Key Services
 ```swift
-@MainActor
-class SubscriptionManager: ObservableObject {
-    @Published var subscriptionLevel: SubscriptionLevel = .free
-    @Published var products: [Product] = []
-    
-    private let productIds = [
-        "com.runstr.member.monthly",      // $5
-        "com.runstr.captain.monthly",     // $10
-        "com.runstr.organization.monthly" // $50
-    ]
-    
-    func loadProducts() async throws {
-        products = try await Product.products(for: productIds)
-    }
-    
-    func purchase(_ product: Product) async throws {
-        let result = try await product.purchase()
-        
-        switch result {
-        case .success(let verification):
-            if case .verified(let transaction) = verification {
-                await updateSubscriptionFeatures()
-                await transaction.finish()
-            }
-        case .userCancelled, .pending:
-            break
-        @unknown default:
-            break
-        }
-    }
-}
+// Core Services Architecture
+AuthenticationService    // User authentication & session
+HealthKitService        // Workout data sync
+SubscriptionService     // StoreKit 2 payments
+TeamService            // Team CRUD operations
+EventService           // Event management
+WalletService          // Lightning/Cashu
+StreamService          // Real-time updates
+AnalyticsService       // Usage tracking
 ```
 
-**Subscription Features Matrix:**
-- **Free**: Basic activity tracking, 7-day history
-- **Member ($5)**: Unlimited history, basic analytics, export data
-- **Captain ($10)**: Create teams (up to 10 members), team chat
-- **Organization ($50)**: Unlimited team size, advanced analytics, priority support
+### Data Flow
+1. User signs up → Creates wallet → Selects subscription
+2. Joins team → Subscription splits to captain/charity/rewards
+3. Syncs workouts → Earns streak rewards → Participates in events
+4. Captain creates events → Sells tickets → Manages team
 
-**Paywall Implementation:**
-- Clean subscription selection UI
-- Clear feature comparison
-- Restore purchases functionality
-- Proper receipt validation
+---
 
-## Phase 5: Basic Team Features (Weeks 14-16)
+## Success Metrics
 
-### Team Infrastructure
+### Platform KPIs
+- **Monthly Recurring Revenue (MRR)**: Target $10K by month 3
+- **Total Teams Created**: 100+ active teams
+- **Member Retention**: 60% month-over-month
+- **Event Participation Rate**: 30% of members
+- **Captain Earning Average**: $200/month
 
-```swift
-class TeamManager: ObservableObject {
-    @Published var userTeams: [Team] = []
-    @Published var selectedTeam: Team?
-    
-    func createTeam(name: String) async throws {
-        guard subscriptionLevel >= .captain else {
-            throw TeamError.subscriptionRequired
-        }
-        
-        let team = Team(
-            id: UUID(),
-            name: name,
-            creatorId: currentUserId,
-            maxSize: subscriptionLevel == .organization ? .max : 10
-        )
-        
-        // Save to CloudKit
-        try await cloudKitManager.save(team)
-    }
-}
-```
+### User Engagement
+- **Daily Active Users**: 40% of total users
+- **Workouts Synced/Week**: 3+ per user
+- **Team Chat Messages**: 10+ per active team daily
+- **Event Completion Rate**: 70% of registrants
 
-**Team Features:**
-- Team creation and management
-- Member invitation system
-- Team activity leaderboard
-- Basic team homepage
+### Technical Metrics
+- **Crash-free rate**: >99.5%
+- **API response time**: <200ms p95
+- **App startup time**: <2 seconds
+- **HealthKit sync reliability**: >99%
 
-**Chat Implementation (Basic):**
-- CloudKit-based messaging
-- Text-only initially
-- Push notifications for new messages
-- Message history limited by subscription tier
+---
 
-## Phase 6: TestFlight Preparation (Weeks 17-18)
+## Launch Strategy
 
-### Pre-Submission Checklist
+### Phase 1: Private Beta (Week 13)
+- 50 fitness influencers/coaches
+- Focus on team creation tools
+- Gather feedback on captain features
+- Refine revenue model
 
-**Technical Requirements:**
-- [ ] All core features functional
-- [ ] No placeholder content
-- [ ] Crash-free operation
-- [ ] Memory leak testing completed
-- [ ] Performance optimization done
+### Phase 2: Public Beta (Week 14-15)
+- Open TestFlight (1000 users)
+- Marketing to running clubs
+- Partnership with fitness communities
+- Referral program for captains
 
-**App Store Connect Setup:**
-- [ ] App metadata prepared
-- [ ] Screenshots for all device sizes
-- [ ] App description focusing on fitness (not crypto)
-- [ ] Demo account credentials ready
-- [ ] Beta testing information completed
+### Phase 3: App Store Launch (Week 16)
+- Full public release
+- Press release to fitness media
+- Influencer marketing campaign
+- Community building on social media
 
-**Compliance Documentation:**
-- [ ] Privacy policy addressing data collection
-- [ ] Terms of service
-- [ ] Export compliance (for encryption)
-- [ ] Age rating questionnaire
+---
 
-### TestFlight Submission Strategy
+## Risk Mitigation
 
-1. **Internal Testing First:**
-   - Add 5-10 internal testers
-   - 1-week testing period
-   - Fix critical bugs
+### Technical Risks
+- **HealthKit Reliability**: Implement fallback manual entry
+- **Payment Processing**: Multiple payment provider support
+- **Scaling Issues**: CloudKit + proper caching strategy
+- **Lightning Integration**: Start with Zebedee, add alternatives
 
-2. **External Beta:**
-   - Prepare beta welcome email
-   - Create feedback collection system
-   - Plan for 2-week beta period
-   - Target 50-100 external testers
+### Business Risks
+- **Low Captain Adoption**: Aggressive referral incentives
+- **Member Churn**: Focus on team engagement features
+- **Event Participation**: Free events initially to build habit
+- **Revenue Split Complexity**: Clear, transparent reporting
 
-## Phase 7: Cashu Wallet Integration (Weeks 19-22)
+### Compliance Risks
+- **App Store Review**: Focus on fitness, minimize crypto emphasis
+- **Payment Regulations**: Proper business entity setup
+- **Data Privacy**: GDPR compliance, clear privacy policy
+- **Age Restrictions**: 17+ rating for financial features
 
-### Secure Wallet Implementation
+---
 
-```swift
-class CashuWalletManager: ObservableObject {
-    private let cashuSwift = CashuSwift()
-    @Published var balance: Int = 0
-    @Published var proofs: [Proof] = []
-    
-    // Use iOS Keychain for seed storage
-    private func storeSeed(_ seed: String) throws {
-        let data = seed.data(using: .utf8)!
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.runstr.wallet",
-            kSecAttrAccount as String: "user_seed",
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-        
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw WalletError.keychainError
-        }
-    }
-    
-    func claimStreakReward(day: Int) async throws {
-        let rewardAmount = calculateReward(for: day)
-        let tokens = try await mintTokens(amount: rewardAmount)
-        proofs.append(contentsOf: tokens)
-        balance += rewardAmount
-    }
-}
-```
+## Post-MVP Roadmap
 
-**Streak Rewards Implementation:**
-- Progressive reward schedule (e.g., 21 sats for 7 days, 100 sats for 30 days)
-- Daily claim mechanism
-- Secure proof storage
-- Export/backup functionality
-
-**Compliance Considerations:**
-- No in-app Bitcoin purchases
-- Rewards are transferable outside app
-- Clear disclosure of cryptocurrency features
-- Educational content about Cashu
-
-## Phase 8: Lightning Integration (Weeks 23-24)
-
-### Payment Features
-
-```swift
-extension CashuWalletManager {
-    func payLightningInvoice(_ invoice: String) async throws {
-        let meltQuote = try await cashuSwift.getMeltQuote(
-            mint: selectedMint,
-            request: invoice
-        )
-        
-        let result = try await cashuSwift.melt(
-            quote: meltQuote,
-            inputs: proofs,
-            outputs: nil
-        )
-        
-        if result.paid {
-            // Update balance and proofs
-            await updateWalletState()
-        }
-    }
-    
-    func receiveLightning(amount: Int) async throws -> String {
-        // Generate Lightning invoice through mint
-        let mintQuote = try await cashuSwift.getMintQuote(
-            mint: selectedMint,
-            amount: amount
-        )
-        
-        return mintQuote.request // Lightning invoice
-    }
-}
-```
-
-**User Experience:**
-- Send/receive sats within the app
-- QR code scanning for invoices
-- Transaction history
-- Fee transparency
-
-## Phase 9: Advanced Features and Polish (Weeks 25-26)
-
-### Nostr Integration (Advanced)
-
-```swift
-class NostrManager: ObservableObject {
-    private let nostrSDK = NostrSDK()
-    @Published var isConnected = false
-    
-    func publishActivity(_ activity: Activity) async throws {
-        guard let nostrKeys = loadNostrKeys() else { return }
-        
-        let event = NostrEvent(
-            kind: 30001, // Custom activity kind
-            content: activity.toJSON(),
-            tags: [
-                ["d", "runstr-activity"],
-                ["type", activity.type.rawValue],
-                ["distance", String(activity.distance)]
-            ]
-        )
-        
-        try await nostrSDK.publish(event, to: relays)
-    }
-}
-```
-
-### Events and Challenges
-
-**Team Events System:**
-- Monthly challenges
-- Custom team goals
-- Leaderboards with rewards
-- Achievement system
-
-## Production Launch Strategy
-
-### App Store Submission (Month 7)
-
-**Marketing Description Focus:**
-- Emphasize fitness tracking features
-- Mention team collaboration
-- Briefly note "rewards" without crypto specifics
-- Highlight subscription benefits
-
-**Geographic Strategy:**
-- Initial launch in crypto-friendly jurisdictions
-- Gradual expansion based on regulatory clarity
-- US launch leveraging new payment flexibility
-
-### Post-Launch Roadmap
-
-**Version 1.1 (Month 8):**
-- Bug fixes from user feedback
-- Performance improvements
-- Additional activity types
-
-**Version 1.2 (Month 9):**
-- Apple Watch companion app
-- Widget support
-- Shortcuts integration
-
-**Version 2.0 (Month 12):**
-- Full Nostr social features
-- Multi-mint support
+### Quarter 2
+- Android app development
 - Advanced analytics dashboard
-- AI-powered coaching
+- Custom workout plan builder
+- Strava/Garmin integration
 
-## Key Success Metrics
+### Quarter 3
+- Web platform launch
+- Corporate wellness programs
+- AI coaching features
+- International expansion
 
-**Technical KPIs:**
-- Crash-free rate > 99.5%
-- App launch time < 2 seconds
-- Memory usage < 150MB
-- Battery drain < 5% per hour during tracking
+### Quarter 4
+- Merchandise integration
+- NFT achievements
+- Advanced Nostr features
+- Partnership program
 
-**Business KPIs:**
-- Monthly Active Users (MAU)
-- Subscription conversion rate (target: 5%)
-- User retention (30-day: 40%, 90-day: 25%)
-- Average session duration > 5 minutes
+---
 
-## Risk Mitigation Strategies
+## Development Timeline Summary
 
-**Apple Review Risks:**
-- Conservative initial feature set
-- Clear organization enrollment
-- Comprehensive demo materials
-- Legal review of crypto features
+| Week | Phase | Key Deliverables |
+|------|-------|-----------------|
+| 1-2 | Foundation | Auth, HealthKit, Core Models |
+| 3-4 | Subscriptions | Payment system, Tiers |
+| 5-6 | Teams | Creation, Management, Chat |
+| 7-8 | Events | Virtual events platform |
+| 9-10 | Rewards | Lightning, Streaks |
+| 11-12 | Polish | UI/UX, Testing |
+| 13 | Private Beta | 50 influencer testers |
+| 14-15 | Public Beta | 1000 TestFlight users |
+| 16 | Launch | App Store release |
 
-**Technical Risks:**
-- Thorough testing across iOS versions
-- Graceful degradation for older devices
-- Offline functionality
-- Regular security audits
+---
 
-**Market Risks:**
-- Focus on fitness value proposition
-- Crypto features as bonus, not core
-- Strong community building
-- Responsive user support
-
-This roadmap provides a structured path to TestFlight and beyond, balancing innovation with Apple's guidelines while building a sustainable fitness platform with unique Bitcoin rewards functionality.
+*This roadmap is a living document and will be updated based on user feedback, technical constraints, and market opportunities.*

@@ -23,8 +23,14 @@ struct DashboardView: View {
     @State private var selectedGoal: DistanceGoal = .none
     @State private var showingGoals = false
     
-    // Weekly rewards state
-    @State private var showingWeeklyRewards = false
+    // Sync dropdown state
+    @State private var showingSyncDropdown = false
+    @State private var selectedSyncSource: SyncSource = .healthKit
+    @State private var autoSyncEnabled = true
+    @State private var isSyncing = false
+    
+    // Mock wallet balance
+    @State private var mockWalletBalance: Int = 2500
     
     // Toast notification state
     @State private var showingRewardToast = false
@@ -50,11 +56,11 @@ struct DashboardView: View {
                     // Start Run button
                     startRunButton
                     
+                    // Sync section
+                    syncSection
+                    
                     // Goals section
                     goalsSection
-                    
-                    // Weekly Rewards Summary
-                    weeklyRewardsSection
                     
                     // Membership section
                     membershipSection
@@ -131,6 +137,19 @@ struct DashboardView: View {
             .runstrCard()
             
             Spacer()
+            
+            // Wallet balance button
+            Button {
+                showingWalletView = true
+            } label: {
+                Text("\(mockWalletBalance)")
+                    .font(.title2)
+                    .foregroundColor(.runstrWhite)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, RunstrSpacing.md)
+                    .padding(.vertical, RunstrSpacing.sm)
+            }
+            .runstrCard()
             
             // Settings button
             Button {
@@ -389,6 +408,125 @@ struct DashboardView: View {
         }
     }
     
+    private var syncSection: some View {
+        VStack(alignment: .leading, spacing: RunstrSpacing.md) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showingSyncDropdown.toggle()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrWhite)
+                    
+                    Text("Sync")
+                        .font(.runstrSubheadline)
+                        .foregroundColor(.runstrWhite)
+                    
+                    Spacer()
+                    
+                    if isSyncing {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .runstrWhite))
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: showingSyncDropdown ? "chevron.up" : "chevron.down")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                            .animation(.easeInOut(duration: 0.3), value: showingSyncDropdown)
+                    }
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if showingSyncDropdown {
+                VStack(spacing: RunstrSpacing.sm) {
+                    // Sync sources
+                    ForEach(SyncSource.allCases, id: \.self) { source in
+                        Button {
+                            selectedSyncSource = source
+                            Task {
+                                await performSync()
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: source.systemImageName)
+                                    .font(.runstrBody)
+                                    .foregroundColor(selectedSyncSource == source ? .runstrWhite : .runstrGray)
+                                    .frame(width: 20)
+                                
+                                Text(source.displayName)
+                                    .font(.runstrBody)
+                                    .foregroundColor(selectedSyncSource == source ? .runstrWhite : .runstrGray)
+                                
+                                Spacer()
+                                
+                                if selectedSyncSource == source {
+                                    Image(systemName: "checkmark")
+                                        .font(.runstrCaption)
+                                        .foregroundColor(.runstrWhite)
+                                }
+                            }
+                            .padding(.vertical, RunstrSpacing.xs)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    
+                    Rectangle()
+                        .fill(Color.runstrGray.opacity(0.2))
+                        .frame(height: 1)
+                        .padding(.vertical, RunstrSpacing.xs)
+                    
+                    // Automatic sync toggle
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath.circle")
+                            .font(.runstrBody)
+                            .foregroundColor(.runstrGray)
+                            .frame(width: 20)
+                        
+                        Text("Automatic Sync")
+                            .font(.runstrBody)
+                            .foregroundColor(.runstrWhite)
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: $autoSyncEnabled)
+                            .labelsHidden()
+                            .tint(.white)
+                            .scaleEffect(0.8)
+                    }
+                    .padding(.vertical, RunstrSpacing.xs)
+                    
+                    // Sync button
+                    Button {
+                        Task {
+                            await performSync()
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.runstrBody)
+                            Text("Sync Today's Workouts")
+                                .font(.runstrBody)
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, RunstrSpacing.sm)
+                        .background(Color.runstrWhite)
+                        .cornerRadius(RunstrRadius.sm)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .disabled(isSyncing)
+                    .opacity(isSyncing ? 0.6 : 1.0)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(RunstrSpacing.lg)
+        .runstrCard()
+    }
+    
     private var goalsSection: some View {
         VStack(alignment: .leading, spacing: RunstrSpacing.md) {
             Button {
@@ -444,89 +582,6 @@ struct DashboardView: View {
                             Rectangle()
                                 .fill(Color.runstrGray.opacity(0.2))
                                 .frame(height: 1)
-                        }
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .padding(RunstrSpacing.lg)
-        .runstrCard()
-    }
-    
-    private var weeklyRewardsSection: some View {
-        let summary = getWeeklyWorkoutsSummary()
-        
-        return VStack(alignment: .leading, spacing: RunstrSpacing.md) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showingWeeklyRewards.toggle()
-                }
-            } label: {
-                HStack {
-                    Text("Weekly Rewards Summary")
-                        .font(.runstrSubheadline)
-                        .foregroundColor(.runstrWhite)
-                    
-                    Text("(\(summary.totalSats) sats)")
-                        .font(.runstrCaption)
-                        .foregroundColor(.runstrGray)
-                    
-                    Spacer()
-                    Image(systemName: showingWeeklyRewards ? "chevron.up" : "chevron.down")
-                        .font(.runstrCaption)
-                        .foregroundColor(.runstrGray)
-                        .animation(.easeInOut(duration: 0.3), value: showingWeeklyRewards)
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
-            if showingWeeklyRewards {
-                VStack(spacing: RunstrSpacing.sm) {
-                    HStack {
-                        Text("This Week")
-                            .font(.runstrBody)
-                            .foregroundColor(.runstrGray)
-                        Spacer()
-                        Text("\(summary.workouts.count) workouts • \(summary.totalSats) sats")
-                            .font(.runstrCaption)
-                            .foregroundColor(.runstrGray)
-                    }
-                    
-                    Rectangle()
-                        .fill(Color.runstrGray.opacity(0.2))
-                        .frame(height: 1)
-                    
-                    ForEach(getWeeklyDaysSummary(), id: \.day) { daySummary in
-                        HStack {
-                            Text(daySummary.day)
-                                .font(.runstrBody)
-                                .foregroundColor(.runstrWhite)
-                            
-                            Spacer()
-                            
-                            HStack(spacing: RunstrSpacing.xs) {
-                                if let workout = daySummary.workout {
-                                    Image(systemName: workout.activityType.systemImageName)
-                                        .font(.runstrCaption)
-                                        .foregroundColor(.runstrGray)
-                                    
-                                    Text("50 sats")
-                                        .font(.runstrCaption)
-                                        .foregroundColor(.runstrWhite)
-                                } else {
-                                    Text("No workout")
-                                        .font(.runstrCaption)
-                                        .foregroundColor(.runstrGray)
-                                }
-                            }
-                        }
-                        .padding(.vertical, RunstrSpacing.xs)
-                        
-                        if daySummary.day != getWeeklyDaysSummary().last?.day {
-                            Rectangle()
-                                .fill(Color.runstrGray.opacity(0.1))
-                                .frame(height: 0.5)
                         }
                     }
                 }
@@ -682,7 +737,7 @@ struct DashboardView: View {
                             activityType: ActivityType.from(hkWorkout: workout),
                             distance: (workout.totalDistance?.doubleValue(for: .meter()) ?? 0) / 1000, // Convert to km
                             duration: workout.duration,
-                            satsEarned: calculateSatsEarned(distance: workout.totalDistance?.doubleValue(for: .meter()) ?? 0, duration: workout.duration),
+                            rewardEarned: calculateRewardEarned(distance: workout.totalDistance?.doubleValue(for: .meter()) ?? 0, duration: workout.duration),
                             date: workout.startDate
                         )
                     }
@@ -709,12 +764,43 @@ struct DashboardView: View {
         }
     }
     
-    private func calculateSatsEarned(distance: Double, duration: TimeInterval) -> Int {
-        // Basic calculation: 100 sats per km + time bonus
+    private func calculateRewardEarned(distance: Double, duration: TimeInterval) -> Int {
+        // Basic calculation: 100 points per km + time bonus
         let distanceKm = distance / 1000
-        let baseSats = Int(distanceKm * 100)
-        let timeBonus = Int(duration / 60) // 1 sat per minute
-        return baseSats + timeBonus
+        let baseReward = Int(distanceKm * 100)
+        let timeBonus = Int(duration / 60) // 1 point per minute
+        return baseReward + timeBonus
+    }
+    
+    // MARK: - Sync Functions
+    
+    private func performSync() async {
+        await MainActor.run {
+            isSyncing = true
+        }
+        
+        // Simulate sync delay
+        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+        
+        // Based on selected source, sync workouts
+        switch selectedSyncSource {
+        case .healthKit:
+            // Sync from HealthKit (already implemented)
+            healthKitService.fetchRecentWorkouts { workouts in
+                print("✅ Synced \(workouts.count) workouts from HealthKit")
+                self.recentWorkouts = workouts
+            }
+        case .garmin:
+            // Mock Garmin sync (not yet implemented)
+            print("⚠️ Garmin sync coming soon")
+        }
+        
+        await MainActor.run {
+            isSyncing = false
+            
+            // Update mock wallet balance to simulate earning rewards
+            mockWalletBalance += 50
+        }
     }
     
     // MARK: - Workout Control Functions
@@ -821,19 +907,19 @@ struct DashboardView: View {
             // Mint Cashu tokens for workout reward
             if workoutReward > 0 {
                 let workoutTokens = try await cashuService.requestTokens(amount: workoutReward)
-                print("✅ Minted \(workoutReward) sats for workout completion")
+                print("✅ Earned \(workoutReward) points for workout completion")
             }
             
             // Mint additional tokens for streak
             if streakReward > 0 {
                 let streakTokens = try await cashuService.requestTokens(amount: streakReward)
-                print("🔥 Minted \(streakReward) sats for day \(streakService.currentStreak) streak!")
+                print("🔥 Earned \(streakReward) points for day \(streakService.currentStreak) streak!")
             }
             
             // Mint weekly completion bonus
             if weeklyBonus > 0 {
                 let bonusTokens = try await cashuService.requestTokens(amount: weeklyBonus)
-                print("🏆 Minted \(weeklyBonus) sats for completing weekly challenge!")
+                print("🏆 Earned \(weeklyBonus) points for completing weekly challenge!")
             }
             
             // Update user stats
@@ -849,7 +935,7 @@ struct DashboardView: View {
                 // authService.updateCurrentUser(currentUser)
             }
             
-            print("✅ Total reward: \(totalReward) sats (\(workoutReward) workout + \(streakReward) streak + \(weeklyBonus) bonus)")
+            print("✅ Total reward: \(totalReward) points (\(workoutReward) workout + \(streakReward) streak + \(weeklyBonus) bonus)")
             print("🏃‍♂️ Distance: \(String(format: "%.2f", workout.distance/1000))km")
             print("⏱️ Duration: \(formatTime(workout.duration))")
             print("🔥 Streak: \(streakService.getStreakStatusMessage())")
@@ -865,9 +951,9 @@ struct DashboardView: View {
         let durationMinutes = workout.duration / 60
         
         // Base reward calculation
-        let distanceReward = Int(distanceKm * 50) // 50 sats per km
-        let timeReward = Int(durationMinutes * 5) // 5 sats per minute
-        let baseReward = max(100, distanceReward + timeReward) // Minimum 100 sats
+        let distanceReward = Int(distanceKm * 50) // 50 points per km
+        let timeReward = Int(durationMinutes * 5) // 5 points per minute
+        let baseReward = max(100, distanceReward + timeReward) // Minimum 100 points
         
         // Bonus multipliers
         var bonusMultiplier = 1.0
@@ -984,7 +1070,7 @@ struct DashboardView: View {
     
     private func showRewardToast(amount: Int) async {
         await MainActor.run {
-            rewardToastMessage = "🎉 Earned \(amount) sats!"
+            rewardToastMessage = "🎉 Earned \(amount) points!"
             showingRewardToast = true
             
             // Auto-dismiss after 3 seconds
@@ -997,7 +1083,7 @@ struct DashboardView: View {
         }
     }
     
-    private func getWeeklyWorkoutsSummary() -> (workouts: [Workout], totalSats: Int) {
+    private func getWeeklyWorkoutsSummary() -> (workouts: [Workout], totalReward: Int) {
         let weeklyWorkouts = workoutStorage.getWorkouts(for: .week)
         let calendar = Calendar.current
         
@@ -1021,8 +1107,8 @@ struct DashboardView: View {
             }
         }
         
-        let totalSats = dailyFirstWorkouts.count * 50 // 50 sats per day
-        return (workouts: dailyFirstWorkouts, totalSats: totalSats)
+        let totalReward = dailyFirstWorkouts.count * 50 // 50 points per day
+        return (workouts: dailyFirstWorkouts, totalReward: totalReward)
     }
     
     private func getWeeklyDaysSummary() -> [DaySummary] {
@@ -1188,7 +1274,7 @@ struct WorkoutSummaryCard: View {
     let activityType: ActivityType
     let distance: Double
     let duration: TimeInterval
-    let satsEarned: Int
+    let rewardEarned: Int
     let date: Date
     
     private var formatter: DateFormatter {
@@ -1222,11 +1308,11 @@ struct WorkoutSummaryCard: View {
                     .foregroundColor(.gray)
                 
                 HStack(spacing: 4) {
-                    Image(systemName: "bitcoinsign.circle.fill")
+                    Image(systemName: "star.circle.fill")
                         .font(.system(size: 12))
                         .foregroundColor(.white)
                     
-                    Text("\(satsEarned)")
+                    Text("\(rewardEarned)")
                         .font(.system(size: 14, weight: .medium, design: .monospaced))
                         .foregroundColor(.white)
                 }
@@ -1238,6 +1324,25 @@ struct WorkoutSummaryCard: View {
             Rectangle()
                 .fill(Color.white.opacity(0.02))
         )
+    }
+}
+
+enum SyncSource: CaseIterable {
+    case healthKit
+    case garmin
+    
+    var displayName: String {
+        switch self {
+        case .healthKit: return "Apple HealthKit"
+        case .garmin: return "Garmin"
+        }
+    }
+    
+    var systemImageName: String {
+        switch self {
+        case .healthKit: return "heart.text.square.fill"
+        case .garmin: return "figure.run"
+        }
     }
 }
 
@@ -1279,7 +1384,7 @@ struct ToastView: View {
         VStack {
             if isShowing {
                 HStack(spacing: RunstrSpacing.sm) {
-                    Image(systemName: "bitcoinsign.circle.fill")
+                    Image(systemName: "star.circle.fill")
                         .font(.title3)
                         .foregroundColor(.runstrWhite)
                     

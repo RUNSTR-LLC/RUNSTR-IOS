@@ -13,6 +13,9 @@ struct SettingsView: View {
     @State private var useLocalStats = false
     @State private var autoPublishRuns = true
     @State private var autoPostRunNotes = true
+    @State private var showingExportKeyAlert = false
+    @State private var exportedKey = ""
+    @State private var showingNsecImport = false
     
     var body: some View {
         NavigationView {
@@ -30,6 +33,11 @@ struct SettingsView: View {
                     // Stats Settings
                     statsSettingsSection
                     
+                    // Account & Security (only show for RUNSTR login users)
+                    if authService.currentUser?.loginMethod == .runstr {
+                        accountSecuritySection
+                    }
+                    
                     // Nostr Publishing
                     nostrPublishingSection
                     
@@ -46,6 +54,23 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showingNostrSettings) {
             NostrSettingsView()
+        }
+        .alert("Your RUNSTR Private Key", isPresented: $showingExportKeyAlert) {
+            Button("Copy to Clipboard") {
+                UIPasteboard.general.string = exportedKey
+            }
+            Button("Done", role: .cancel) { }
+        } message: {
+            Text("Write this down and store it somewhere safe. This is your only way to recover your account.\n\n\(exportedKey)")
+        }
+        .sheet(isPresented: $showingNsecImport) {
+            SettingsNsecImportView { nsec in
+                let success = authService.signInWithNsec(nsec)
+                if success {
+                    showingNsecImport = false
+                }
+                return success
+            }
         }
     }
     
@@ -140,6 +165,132 @@ struct SettingsView: View {
             }
         }
     }
+    
+    private var accountSecuritySection: some View {
+        VStack(alignment: .leading, spacing: RunstrSpacing.md) {
+            Text("Account & Security")
+                .font(.runstrSubheadline)
+                .foregroundColor(.runstrWhite)
+            
+            VStack(spacing: RunstrSpacing.sm) {
+                // Export Private Key Button
+                Button {
+                    if let privateKey = authService.exportRunstrPrivateKey() {
+                        exportedKey = privateKey
+                        showingExportKeyAlert = true
+                    }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                            Text("Export Private Key")
+                                .font(.runstrBodyMedium)
+                                .foregroundColor(.runstrWhite)
+                            
+                            Text("Backup your nsec key for account recovery")
+                                .font(.runstrCaption)
+                                .foregroundColor(.runstrGray)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "key.horizontal")
+                            .foregroundColor(.white)
+                            .font(.title2)
+                    }
+                    .padding(RunstrSpacing.lg)
+                    .runstrCard()
+                }
+                
+                // Restore/Import Account Button
+                Button {
+                    showingNsecImport = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                            Text("Restore Different Account")
+                                .font(.runstrBodyMedium)
+                                .foregroundColor(.runstrWhite)
+                            
+                            Text("Switch to a different RUNSTR account using your backed-up nsec")
+                                .font(.runstrCaption)
+                                .foregroundColor(.runstrGray)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.blue)
+                            .font(.title2)
+                    }
+                    .padding(RunstrSpacing.lg)
+                    .runstrCard()
+                }
+                
+                // Account Info
+                VStack(alignment: .leading, spacing: RunstrSpacing.sm) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                            Text("Login Method")
+                                .font(.runstrBodyMedium)
+                                .foregroundColor(.runstrWhite)
+                            
+                            Text("RUNSTR (Self-Custody)")
+                                .font(.runstrCaption)
+                                .foregroundColor(.runstrGray)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundColor(.green)
+                            .font(.title2)
+                    }
+                    
+                    if let user = authService.currentUser {
+                        Divider()
+                            .background(Color.gray.opacity(0.3))
+                        
+                        VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                            Text("Your Public Key (npub)")
+                                .font(.runstrCaption)
+                                .foregroundColor(.runstrGray)
+                            
+                            Text(user.displayNostrPublicKey)
+                                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                .foregroundColor(.runstrWhite)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                }
+                .padding(RunstrSpacing.lg)
+                .runstrCard()
+                
+                // Sign Out Button
+                Button {
+                    authService.signOut()
+                } label: {
+                    HStack {
+                        Text("Sign Out")
+                            .font(.runstrBodyMedium)
+                            .foregroundColor(.red)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .foregroundColor(.red)
+                            .font(.title2)
+                    }
+                    .padding(RunstrSpacing.lg)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                            .background(Color.clear)
+                    )
+                }
+            }
+        }
+    }
 }
 
 struct SettingsToggleRow: View {
@@ -199,6 +350,118 @@ struct NostrSettingsView: View {
                     }
                     .foregroundColor(.runstrWhite)
                 }
+            }
+        }
+    }
+}
+
+struct SettingsNsecImportView: View {
+    let onImport: (String) -> Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var nsecInput = ""
+    @State private var errorMessage = ""
+    @State private var isImporting = false
+    @State private var showingConfirmation = false
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 32) {
+                VStack(spacing: 16) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 60))
+                        .foregroundColor(.white)
+                    
+                    Text("Switch RUNSTR Account")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text("This will replace your current account with the account associated with the nsec you enter. Make sure you've backed up your current account first!")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+                
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("PRIVATE KEY (nsec)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.gray)
+                        
+                        TextField("nsec1...", text: $nsecInput)
+                            .textFieldStyle(PlainTextFieldStyle())
+                            .font(.system(size: 16, weight: .regular, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 2)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            )
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        if !errorMessage.isEmpty {
+                            Text(errorMessage)
+                                .font(.system(size: 12))
+                                .foregroundColor(.red)
+                        }
+                    }
+                    
+                    Button {
+                        showingConfirmation = true
+                    } label: {
+                        Text("Switch Account")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(Color.white)
+                            .cornerRadius(2)
+                    }
+                    .disabled(nsecInput.isEmpty || !nsecInput.hasPrefix("nsec1"))
+                    .opacity((nsecInput.isEmpty || !nsecInput.hasPrefix("nsec1")) ? 0.5 : 1.0)
+                }
+                
+                VStack(spacing: 8) {
+                    Text("⚠️ Warning")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.red)
+                    
+                    Text("This action will log you out of your current account. Make sure you have backed up your current nsec before proceeding.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 40)
+            .background(Color.runstrBackground)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .foregroundColor(.runstrWhite)
+                }
+            }
+            .alert("Confirm Account Switch", isPresented: $showingConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Switch Account", role: .destructive) {
+                    isImporting = true
+                    errorMessage = ""
+                    
+                    let success = onImport(nsecInput)
+                    if !success {
+                        errorMessage = "Invalid nsec format. Please check your private key and try again."
+                    }
+                    
+                    isImporting = false
+                }
+            } message: {
+                Text("This will replace your current RUNSTR account. Are you sure you want to continue?")
             }
         }
     }

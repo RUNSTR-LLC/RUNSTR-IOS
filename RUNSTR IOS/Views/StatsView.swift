@@ -73,7 +73,7 @@ struct StatsView: View {
                         .foregroundColor(selectedTimeframe == timeFrame ? .black : .white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(selectedTimeframe == timeFrame ? Color.orange : Color.clear)
+                        .background(selectedTimeframe == timeFrame ? Color.white : Color.clear)
                 }
             }
         }
@@ -100,10 +100,10 @@ struct StatsView: View {
                     HStack(spacing: 4) {
                         Text(selectedMetric.displayName)
                             .font(.subheadline)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.white)
                         Image(systemName: "chevron.down")
                             .font(.caption)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.white)
                     }
                 }
             }
@@ -115,14 +115,14 @@ struct StatsView: View {
                         x: .value("Date", dataPoint.date),
                         y: .value(selectedMetric.displayName, dataPoint.value)
                     )
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.white)
                     .interpolationMethod(.catmullRom)
                     
                     AreaMark(
                         x: .value("Date", dataPoint.date),
                         y: .value(selectedMetric.displayName, dataPoint.value)
                     )
-                    .foregroundStyle(.orange.opacity(0.3))
+                    .foregroundStyle(.white.opacity(0.3))
                     .interpolationMethod(.catmullRom)
                 }
                 .chartYAxis {
@@ -295,7 +295,7 @@ struct StatsView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Image(systemName: "brain.head.profile")
-                    .foregroundColor(.orange)
+                    .foregroundColor(.white)
                 Text("Coach Claude Insights")
                     .font(.headline)
                     .fontWeight(.bold)
@@ -385,7 +385,7 @@ struct SummaryCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: icon)
-                    .foregroundColor(.orange)
+                    .foregroundColor(.white)
                 
                 Spacer()
                 
@@ -431,10 +431,10 @@ struct PersonalRecordRow: View {
                         Text("NEW!")
                             .font(.caption)
                             .fontWeight(.bold)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.2))
+                            .background(Color.white.opacity(0.2))
                             .cornerRadius(4)
                     }
                 }
@@ -514,7 +514,7 @@ enum InsightType: Codable {
         switch self {
         case .positive: return .green
         case .tip: return .blue
-        case .warning: return .orange
+        case .warning: return .white
         }
     }
 }
