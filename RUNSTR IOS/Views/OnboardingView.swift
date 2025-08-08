@@ -10,23 +10,23 @@ struct OnboardingView: View {
     private let onboardingPages = [
         OnboardingPage(
             title: "RUNSTR",
-            subtitle: "Run. Earn. Connect.",
+            subtitle: "Put your workouts to work",
             imageName: "runstr_logo",
-            description: "The fitness app that rewards you with Bitcoin for staying active.",
+            description: "",
             isLogo: true
         ),
         OnboardingPage(
-            title: "Join Teams",
-            subtitle: "Build community and stay motivated",
-            imageName: "person.3.fill",
-            description: "Join teams to stay motivated and participate in group challenges with friends and fellow runners.",
+            title: "Enter your workouts into competitions",
+            subtitle: "",
+            imageName: "trophy.fill",
+            description: "",
             isLogo: false
         ),
         OnboardingPage(
-            title: "Compete",
-            subtitle: "Enter competitions for bigger rewards",
-            imageName: "trophy.fill",
-            description: "Participate in challenges and events to compete with other users and win Bitcoin prizes.",
+            title: "Join Teams, Leagues, and Events",
+            subtitle: "",
+            imageName: "person.3.fill",
+            description: "",
             isLogo: false
         )
     ]
@@ -365,16 +365,20 @@ struct OnboardingPageView: View {
                     .fontWeight(.bold)
                     .multilineTextAlignment(.center)
                 
-                Text(page.subtitle)
-                    .font(.title2)
-                    .foregroundColor(.gray)
-                    .multilineTextAlignment(.center)
+                if !page.subtitle.isEmpty {
+                    Text(page.subtitle)
+                        .font(.title2)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                }
                 
-                Text(page.description)
-                    .font(.body)
-                    .foregroundColor(.gray)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                if !page.description.isEmpty {
+                    Text(page.description)
+                        .font(.body)
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
             }
             
             Spacer()
