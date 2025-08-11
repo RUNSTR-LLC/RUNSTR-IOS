@@ -5,18 +5,16 @@ struct MainTabView: View {
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var authService: AuthenticationService
-    @EnvironmentObject var cashuService: CashuService
-    @EnvironmentObject var streakService: StreakService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var workoutStorage: WorkoutStorage
     
     var body: some View {
         TabView {
-            // Dashboard Tab
+            // Activity Tab
             DashboardView()
                 .tabItem {
-                    Image(systemName: "house.fill")
-                    Text("DASHBOARD")
+                    Image(systemName: "figure.run")
+                    Text("ACTIVITY")
                 }
                 .tag(0)
             
@@ -27,30 +25,6 @@ struct MainTabView: View {
                     Text("PROFILE")
                 }
                 .tag(1)
-            
-            // League Tab
-            LeagueView()
-                .tabItem {
-                    Image(systemName: "trophy.fill")
-                    Text("LEAGUE")
-                }
-                .tag(2)
-            
-            // Teams Tab
-            TeamsView()
-                .tabItem {
-                    Image(systemName: "person.3.fill")
-                    Text("TEAMS")
-                }
-                .tag(3)
-            
-            // Events Tab
-            EventsView()
-                .tabItem {
-                    Image(systemName: "calendar")
-                    Text("EVENTS")
-                }
-                .tag(4)
         }
         .accentColor(.runstrWhite)
         .background(Color.runstrBackground)
@@ -86,8 +60,6 @@ struct MainTabView: View {
         .environmentObject(LocationService())
         .environmentObject(HealthKitService())
         .environmentObject(AuthenticationService())
-        .environmentObject(CashuService())
-        .environmentObject(StreakService())
         .environmentObject(NostrService())
         .environmentObject(WorkoutStorage())
 }

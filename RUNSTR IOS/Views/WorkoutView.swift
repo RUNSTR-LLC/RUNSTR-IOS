@@ -9,8 +9,6 @@ struct WorkoutView: View {
     @EnvironmentObject var locationService: LocationService
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var authService: AuthenticationService
-    @EnvironmentObject var cashuService: CashuService
-    @EnvironmentObject var streakService: StreakService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var workoutStorage: WorkoutStorage
     
@@ -58,11 +56,16 @@ struct WorkoutView: View {
             // Configure WorkoutSession with required services
             workoutSession.configure(healthKitService: healthKitService, locationService: locationService)
             
-            if !workoutSession.isActive {
-                print("🏃 Starting workout session...")
-                startWorkout()
-            } else {
-                print("🏃 Workout session already active")
+            // Request permissions before starting workout
+            Task {
+                await requestPermissions()
+                
+                if !workoutSession.isActive {
+                    print("🏃 Starting workout session...")
+                    startWorkout()
+                } else {
+                    print("🏃 Workout session already active")
+                }
             }
         }
         .onChange(of: locationService.currentLocation) { _, location in
@@ -74,6 +77,7 @@ struct WorkoutView: View {
             if let workout = completedWorkout {
                 WorkoutSummaryView(workout: workout)
                     .environmentObject(workoutStorage)
+                    .environmentObject(nostrService)
                     .onDisappear {
                         // When summary is dismissed, dismiss the workout view too
                         dismiss()
@@ -146,17 +150,16 @@ struct WorkoutView: View {
                 }
                 
                 VStack(spacing: 4) {
-                    Text("Sats Earned")
+                    Text("Calories")
                         .font(.caption)
                         .foregroundColor(.gray)
-                    HStack(spacing: 4) {
-                        Image(systemName: "bitcoinsign.circle.fill")
-                            .foregroundColor(.orange)
-                        Text("\(calculateCurrentReward())")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                    }
+                    Text("\(Int(healthKitService.currentCalories))")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                    Text("kcal")
+                        .font(.caption)
+                        .foregroundColor(.gray)
                 }
             }
             .padding(.horizontal)
@@ -212,6 +215,24 @@ struct WorkoutView: View {
         .padding(.bottom, 40)
     }
     
+    private func requestPermissions() async {
+        // Request HealthKit authorization
+        if !healthKitService.isAuthorized {
+            print("🏥 Requesting HealthKit authorization...")
+            let healthKitAuthorized = await healthKitService.requestAuthorization()
+            if !healthKitAuthorized {
+                print("❌ HealthKit authorization denied")
+                return
+            }
+        }
+        
+        // Request Location permission
+        if locationService.authorizationStatus == .notDetermined {
+            print("📍 Requesting location authorization...")
+            locationService.requestLocationPermission()
+        }
+    }
+    
     private func startWorkout() {
         // Use a test user ID if no user is logged in
         let userID = authService.currentUser?.id ?? "test-user-123"
@@ -247,7 +268,7 @@ struct WorkoutView: View {
                     print("Workout saved to HealthKit: \(success)")
                 }
                 
-                // 2. Update streak and award Cashu tokens
+                // 2. Update user stats
                 await awardWorkoutReward(for: completedWorkout)
                 
                 // 3. Create Nostr event (if connected)
@@ -263,99 +284,35 @@ struct WorkoutView: View {
         }
     }
     
-    /// Award Cashu tokens based on workout performance and streak
+    /// Update user stats after workout completion
     private func awardWorkoutReward(for workout: Workout) async {
-        guard let user = authService.currentUser else {
-            print("❌ No authenticated user for reward")
+        guard var currentUser = authService.currentUser else {
+            print("❌ No authenticated user for stats update")
             return
         }
         
-        // Calculate base workout reward
-        let workoutReward = calculateWorkoutReward(workout)
+        // Update user stats
+        currentUser.stats.recordWorkout(workout)
         
-        // Update streak and get streak reward
-        streakService.recordWorkout(date: workout.startTime)
-        let streakReward = streakService.streakRewardEarned
-        
-        // Check for weekly completion bonus
-        let weeklyBonus = streakService.hasCompletedWeeklyChallenge() ? streakService.getWeeklyCompletionBonus() : 0
-        
-        let totalReward = workoutReward + streakReward + weeklyBonus
-        
-        guard totalReward > 0 else {
-            print("❌ No reward calculated for workout")
-            return
+        // Simple streak logic - increment if workout was today, reset if gap
+        let daysSinceLastWorkout = currentUser.stats.daysSinceLastWorkout()
+        if daysSinceLastWorkout <= 1 {
+            currentUser.stats.currentStreak += 1
+        } else {
+            currentUser.stats.currentStreak = 1
         }
         
-        do {
-            // Mint Cashu tokens for workout reward
-            if workoutReward > 0 {
-                let workoutTokens = try await cashuService.requestTokens(amount: workoutReward)
-                print("✅ Minted \(workoutReward) sats for workout completion")
-            }
-            
-            // Mint additional tokens for streak
-            if streakReward > 0 {
-                let streakTokens = try await cashuService.requestTokens(amount: streakReward)
-                print("🔥 Minted \(streakReward) sats for day \(streakService.currentStreak) streak!")
-            }
-            
-            // Mint weekly completion bonus
-            if weeklyBonus > 0 {
-                let bonusTokens = try await cashuService.requestTokens(amount: weeklyBonus)
-                print("🏆 Minted \(weeklyBonus) sats for completing weekly challenge!")
-            }
-            
-            // Update user stats
-            if var currentUser = authService.currentUser {
-                currentUser.stats.recordWorkout(workout, streakReward: streakReward + weeklyBonus)
-                currentUser.stats.updateStreak(current: streakService.currentStreak, longest: streakService.currentStreak)
-                
-                if weeklyBonus > 0 {
-                    currentUser.stats.recordWeeklyStreakCompletion(bonus: weeklyBonus)
-                }
-                
-                // Save updated user (this would normally go through AuthenticationService)
-                // authService.updateCurrentUser(currentUser)
-            }
-            
-            print("✅ Total reward: \(totalReward) sats (\(workoutReward) workout + \(streakReward) streak + \(weeklyBonus) bonus)")
-            print("🏃‍♂️ Distance: \(String(format: "%.2f", workout.distance/1000))km")
-            print("⏱️ Duration: \(formatTime(workout.duration))")
-            print("🔥 Streak: \(streakService.getStreakStatusMessage())")
-            
-        } catch {
-            print("❌ Failed to award workout reward: \(error)")
-        }
+        currentUser.stats.longestStreak = max(currentUser.stats.longestStreak, currentUser.stats.currentStreak)
+        
+        print("✅ Updated user stats:")
+        print("🏃‍♂️ Distance: \(String(format: "%.2f", workout.distance/1000))km")
+        print("⏱️ Duration: \(formatTime(workout.duration))")
+        print("🔥 Streak: \(currentUser.stats.currentStreak) days")
+        
+        // Save updated user (this would normally go through AuthenticationService)
+        // authService.updateCurrentUser(currentUser)
     }
     
-    /// Calculate reward amount based on workout metrics
-    private func calculateWorkoutReward(_ workout: Workout) -> Int {
-        let distanceKm = workout.distance / 1000
-        let durationMinutes = workout.duration / 60
-        
-        // Base reward calculation
-        let distanceReward = Int(distanceKm * 50) // 50 sats per km
-        let timeReward = Int(durationMinutes * 5) // 5 sats per minute
-        let baseReward = max(100, distanceReward + timeReward) // Minimum 100 sats
-        
-        // Bonus multipliers
-        var bonusMultiplier = 1.0
-        
-        // Distance bonus
-        if distanceKm >= 10.0 {
-            bonusMultiplier += 0.5 // 50% bonus for 10k+
-        } else if distanceKm >= 5.0 {
-            bonusMultiplier += 0.25 // 25% bonus for 5k+
-        }
-        
-        // Pace bonus (under 5 min/km is good pace)
-        if workout.averagePace < 5.0 {
-            bonusMultiplier += 0.3 // 30% bonus for good pace
-        }
-        
-        return Int(Double(baseReward) * bonusMultiplier)
-    }
     
     private func formatTime(_ timeInterval: TimeInterval) -> String {
         let hours = Int(timeInterval) / 3600
@@ -377,11 +334,6 @@ struct WorkoutView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
     
-    private func calculateCurrentReward() -> Int {
-        let baseReward = Int(workoutSession.currentDistance / 100) // 1 sat per 100m
-        let timeReward = Int(workoutSession.elapsedTime / 300) // 1 sat per 5 minutes
-        return max(100, baseReward + timeReward)
-    }
     
     /// Publish completed workout to Nostr relays
     private func publishWorkoutToNostr(_ workout: Workout) async {
@@ -393,7 +345,7 @@ struct WorkoutView: View {
         // Check if NostrService is connected to relays
         if !nostrService.isConnected {
             print("⚠️ NostrService not connected to relays, attempting connection...")
-            await nostrService.connectToRelays()
+            await nostrService.connect()
             
             // Wait briefly and check connection again
             try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
@@ -404,19 +356,14 @@ struct WorkoutView: View {
         }
         
         // Publish workout event with public privacy level
-        let success = await nostrService.publishWorkoutEvent(
-            workout, 
-            privacyLevel: .public,
-            teamID: nil, // TODO: Add team support if user is in a team
-            challengeID: nil // TODO: Add challenge support if workout is part of event
-        )
+        let success = await nostrService.publishWorkoutEvent(workout)
         
         if success {
             print("✅ Successfully published workout to Nostr!")
             print("   🏃‍♂️ Activity: \(workout.activityType.displayName)")
             print("   📏 Distance: \(String(format: "%.2f", workout.distance/1000))km")
             print("   ⏱️ Duration: \(formatTime(workout.duration))")
-            print("   🔗 Event published to \(nostrService.connectedRelays.count) relays")
+            print("   🔗 Event published to Nostr relay")
         } else {
             print("❌ Failed to publish workout to Nostr relays")
         }
@@ -429,8 +376,6 @@ struct WorkoutView: View {
         .environmentObject(LocationService())
         .environmentObject(HealthKitService())
         .environmentObject(AuthenticationService())
-        .environmentObject(CashuService())
-        .environmentObject(StreakService())
         .environmentObject(NostrService())
         .environmentObject(WorkoutStorage())
 }

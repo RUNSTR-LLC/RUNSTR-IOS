@@ -5,9 +5,13 @@ struct WorkoutSummaryView: View {
     let workout: Workout
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var workoutStorage: WorkoutStorage
+    @EnvironmentObject var nostrService: NostrService
     
     @State private var region: MKCoordinateRegion
     @State private var showShareSheet = false
+    @State private var showNostrComposer = false
+    @State private var nostrMessage = ""
+    @State private var isPostingToNostr = false
     
     init(workout: Workout) {
         self.workout = workout
@@ -28,16 +32,16 @@ struct WorkoutSummaryView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
                     // Header
                     headerSection
                     
-                    // Route Map (if available)
-                    if workout.route != nil && !workout.route!.isEmpty {
-                        routeMapSection
-                    }
+                    // Route Map (temporarily disabled for debugging)
+                    // if workout.route != nil && !workout.route!.isEmpty {
+                    //     routeMapSection
+                    // }
                     
                     // Main Stats
                     mainStatsSection
@@ -48,6 +52,9 @@ struct WorkoutSummaryView: View {
                     // Rewards Section
                     rewardsSection
                     
+                    // Nostr Posting Section (temporarily disabled for debugging)
+                    // nostrPostingSection
+                    
                     // Action Buttons
                     actionButtonsSection
                 }
@@ -57,7 +64,6 @@ struct WorkoutSummaryView: View {
             .foregroundColor(.white)
             .navigationTitle("Workout Complete!")
             .navigationBarTitleDisplayMode(.large)
-            .navigationBarBackButtonHidden()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -71,9 +77,21 @@ struct WorkoutSummaryView: View {
             // Save workout to local storage
             workoutStorage.saveWorkout(workout)
         }
-        .sheet(isPresented: $showShareSheet) {
-            ShareSheet(workout: workout)
-        }
+        // Sheets temporarily disabled for debugging
+        // .sheet(isPresented: $showShareSheet) {
+        //     ShareSheet(workout: workout)
+        // }
+        // .sheet(isPresented: $showNostrComposer) {
+        //     NostrComposerView(
+        //         workout: workout,
+        //         message: $nostrMessage,
+        //         isPosting: $isPostingToNostr
+        //     ) {
+        //         Task {
+        //             await postWorkoutToNostr()
+        //         }
+        //     }
+        // }
     }
     
     private var headerSection: some View {
@@ -188,7 +206,7 @@ struct WorkoutSummaryView: View {
                     .foregroundColor(.orange)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(workout.rewardAmount) sats")
+                    Text("\(workout.rewardAmount ?? 0) sats")
                         .font(.title2)
                         .fontWeight(.bold)
                     
@@ -202,6 +220,38 @@ struct WorkoutSummaryView: View {
             .padding()
             .background(Color.gray.opacity(0.1))
             .cornerRadius(12)
+        }
+    }
+    
+    private var nostrPostingSection: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("Share to Nostr")
+                    .font(.headline)
+                Spacer()
+            }
+            
+            Button {
+                showNostrComposer = true
+            } label: {
+                HStack {
+                    Image(systemName: "at")
+                    Text("Post to Nostr")
+                    if isPostingToNostr {
+                        Spacer()
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                    }
+                }
+                .font(.headline)
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Color.purple)
+                .cornerRadius(12)
+            }
+            .disabled(isPostingToNostr)
         }
     }
     
@@ -236,6 +286,33 @@ struct WorkoutSummaryView: View {
                 .frame(height: 50)
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(12)
+            }
+        }
+    }
+    
+    private func postWorkoutToNostr() async {
+        isPostingToNostr = true
+        
+        // Create workout summary content
+        let workoutContent = """
+        🏃‍♂️ Just completed a \(workout.activityType.displayName)!
+        📏 Distance: \(workout.distanceFormatted)
+        ⏱️ Duration: \(workout.durationFormatted)
+        ⚡ Pace: \(workout.pace)
+        
+        \(nostrMessage.isEmpty ? "" : nostrMessage + "\n\n")
+        Posted from RUNSTR iOS
+        
+        #RUNSTR #Fitness #\(workout.activityType.rawValue)
+        """
+        
+        let success = await nostrService.publishTextNote(workoutContent)
+        
+        await MainActor.run {
+            isPostingToNostr = false
+            if success {
+                showNostrComposer = false
+                nostrMessage = "" // Clear the message
             }
         }
     }
@@ -336,7 +413,7 @@ struct ShareSheet: View {
                     }
                     
                     HStack {
-                        Text("₿ Earned: \(workout.rewardAmount) sats")
+                        Text("₿ Earned: \(workout.rewardAmount ?? 0) sats")
                         Spacer()
                     }
                 }
@@ -352,7 +429,7 @@ struct ShareSheet: View {
                     📏 Distance: \(workout.distanceFormatted)
                     ⏱️ Time: \(workout.durationFormatted)
                     ⚡ Pace: \(workout.pace)
-                    ₿ Earned: \(workout.rewardAmount) sats with RUNSTR
+                    ₿ Earned: \(workout.rewardAmount ?? 0) sats with RUNSTR
                     """
                     UIPasteboard.general.string = shareText
                     dismiss()
@@ -378,6 +455,83 @@ struct ShareSheet: View {
     }
 }
 
+struct NostrComposerView: View {
+    let workout: Workout
+    @Binding var message: String
+    @Binding var isPosting: Bool
+    let onPost: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Workout Summary")
+                        .font(.headline)
+                    
+                    Text("""
+                    🏃‍♂️ \(workout.activityType.displayName)
+                    📏 Distance: \(workout.distanceFormatted)
+                    ⏱️ Duration: \(workout.durationFormatted)
+                    ⚡ Pace: \(workout.pace)
+                    
+                    Posted from RUNSTR iOS
+                    """)
+                    .font(.body)
+                    .foregroundColor(.gray)
+                    .padding()
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(8)
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Add your message (optional)")
+                        .font(.headline)
+                    
+                    TextEditor(text: $message)
+                        .frame(minHeight: 100)
+                        .padding(8)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(8)
+                }
+                
+                Spacer()
+                
+                Button {
+                    onPost()
+                } label: {
+                    HStack {
+                        if isPosting {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                        }
+                        Text(isPosting ? "Posting..." : "Post to Nostr")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Color.purple)
+                    .cornerRadius(12)
+                }
+                .disabled(isPosting)
+            }
+            .padding()
+            .navigationTitle("Share to Nostr")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .disabled(isPosting)
+                }
+            }
+        }
+    }
+}
+
 extension DateFormatter {
     static let workoutDate: DateFormatter = {
         let formatter = DateFormatter()
@@ -388,17 +542,18 @@ extension DateFormatter {
 }
 
 #Preview {
-    let sampleWorkout = Workout(activityType: .running, userID: "test")
+    func createSampleWorkout() -> Workout {
+        var workout = Workout(activityType: .running, userID: "test")
+        workout.distance = 5200 // 5.2km
+        workout.duration = 1500 // 25 minutes
+        workout.averagePace = 4.8 // 4:48 min/km
+        workout.calories = 320
+        workout.averageHeartRate = 155
+        workout.rewardAmount = 450
+        return workout
+    }
     
-    // Configure sample workout with realistic data
-    var workout = sampleWorkout
-    workout.distance = 5200 // 5.2km
-    workout.duration = 1500 // 25 minutes
-    workout.averagePace = 4.8 // 4:48 min/km
-    workout.calories = 320
-    workout.averageHeartRate = 155
-    workout.rewardAmount = 450
-    
-    return WorkoutSummaryView(workout: workout)
+    return WorkoutSummaryView(workout: createSampleWorkout())
         .environmentObject(WorkoutStorage())
+        .environmentObject(NostrService())
 }

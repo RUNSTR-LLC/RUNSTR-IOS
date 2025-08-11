@@ -7,12 +7,11 @@ class ActivityTypeTests: XCTestCase {
     // MARK: - ActivityType Enum Tests
     
     func testActivityTypeAllCases() {
-        // Test that we have all 10 activity types
-        XCTAssertEqual(ActivityType.allCases.count, 10, "Should have exactly 10 activity types")
+        // Test that we have all 3 activity types
+        XCTAssertEqual(ActivityType.allCases.count, 3, "Should have exactly 3 activity types")
         
         let expectedTypes: [ActivityType] = [
-            .running, .walking, .cycling, .strengthTraining, .yoga,
-            .swimming, .functionalStrengthTraining, .hiit, .crossTraining, .flexibility
+            .running, .walking, .cycling
         ]
         
         for expectedType in expectedTypes {
@@ -26,14 +25,7 @@ class ActivityTypeTests: XCTestCase {
         let displayNameTests = [
             (ActivityType.running, "Running"),
             (ActivityType.walking, "Walking"),
-            (ActivityType.cycling, "Cycling"),
-            (ActivityType.strengthTraining, "Strength Training"),
-            (ActivityType.yoga, "Yoga"),
-            (ActivityType.swimming, "Swimming"),
-            (ActivityType.functionalStrengthTraining, "Functional Strength"),
-            (ActivityType.hiit, "HIIT"),
-            (ActivityType.crossTraining, "Cross Training"),
-            (ActivityType.flexibility, "Flexibility")
+            (ActivityType.cycling, "Cycling")
         ]
         
         for (activityType, expectedDisplayName) in displayNameTests {
@@ -47,14 +39,7 @@ class ActivityTypeTests: XCTestCase {
         let systemImageTests = [
             (ActivityType.running, "figure.run"),
             (ActivityType.walking, "figure.walk"),
-            (ActivityType.cycling, "bicycle"),
-            (ActivityType.strengthTraining, "dumbbell"),
-            (ActivityType.yoga, "figure.mind.and.body"),
-            (ActivityType.swimming, "figure.pool.swim"),
-            (ActivityType.functionalStrengthTraining, "figure.strengthtraining.functional"),
-            (ActivityType.hiit, "timer"),
-            (ActivityType.crossTraining, "figure.cross.training"),
-            (ActivityType.flexibility, "figure.flexibility")
+            (ActivityType.cycling, "bicycle")
         ]
         
         for (activityType, expectedImageName) in systemImageTests {
@@ -70,14 +55,7 @@ class ActivityTypeTests: XCTestCase {
         let healthKitMappingTests = [
             (ActivityType.running, HKWorkoutActivityType.running),
             (ActivityType.walking, HKWorkoutActivityType.walking),
-            (ActivityType.cycling, HKWorkoutActivityType.cycling),
-            (ActivityType.strengthTraining, HKWorkoutActivityType.traditionalStrengthTraining),
-            (ActivityType.yoga, HKWorkoutActivityType.yoga),
-            (ActivityType.swimming, HKWorkoutActivityType.swimming),
-            (ActivityType.functionalStrengthTraining, HKWorkoutActivityType.functionalStrengthTraining),
-            (ActivityType.hiit, HKWorkoutActivityType.highIntensityIntervalTraining),
-            (ActivityType.crossTraining, HKWorkoutActivityType.crossTraining),
-            (ActivityType.flexibility, HKWorkoutActivityType.flexibility)
+            (ActivityType.cycling, HKWorkoutActivityType.cycling)
         ]
         
         for (activityType, expectedHKType) in healthKitMappingTests {

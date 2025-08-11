@@ -1,17 +1,13 @@
 import Foundation
 import AuthenticationServices
+import HealthKit
 
 struct User: Codable, Identifiable {
     let id: String
     let email: String?
     let appleUserID: String?
-    let runstrNostrPublicKey: String // npub - RUNSTR-generated key
-    let runstrNostrPrivateKey: String // nsec - stored securely
-    var mainNostrPublicKey: String? // User's existing npub (optional)
-    var isDelegatedSigning: Bool = false // Has linked main npub
-    var additionalNostrPublicKeys: [String] = [] // Additional npubs for stats
-    var statsConfiguration: StatsConfiguration = StatsConfiguration()
-    var subscriptionStatus: SubscriptionStatus
+    let nostrPublicKey: String // npub - generated for this user
+    let nostrPrivateKey: String // nsec - stored securely
     let createdAt: Date
     var profile: UserProfile
     var stats: UserStats
@@ -22,140 +18,24 @@ struct User: Codable, Identifiable {
         self.id = UUID().uuidString
         self.appleUserID = appleUserID
         self.email = email
-        self.runstrNostrPublicKey = nostrKeys.publicKey
-        self.runstrNostrPrivateKey = nostrKeys.privateKey
-        self.mainNostrPublicKey = nil
-        self.subscriptionStatus = SubscriptionStatus(
-            tier: .none,
-            isActive: false,
-            expirationDate: nil,
-            autoRenew: false,
-            paymentMethod: .applePay,
-            purchaseDate: Date()
-        )
+        self.nostrPublicKey = nostrKeys.publicKey
+        self.nostrPrivateKey = nostrKeys.privateKey
         self.createdAt = Date()
         self.profile = UserProfile()
         self.stats = UserStats()
         self.loginMethod = .apple
     }
     
-    // RUNSTR login initializer
-    init(runstrNostrKeys: NostrKeyPair, profile: NostrProfile? = nil) {
-        self.id = UUID().uuidString
-        self.appleUserID = nil
-        self.email = nil
-        self.runstrNostrPublicKey = runstrNostrKeys.publicKey
-        self.runstrNostrPrivateKey = runstrNostrKeys.privateKey
-        self.mainNostrPublicKey = nil // No main npub initially - user can link later
-        self.isDelegatedSigning = false
-        self.subscriptionStatus = SubscriptionStatus(
-            tier: .none,
-            isActive: false,
-            expirationDate: nil,
-            autoRenew: false,
-            paymentMethod: .applePay,
-            purchaseDate: Date()
-        )
-        self.createdAt = Date()
-        self.profile = UserProfile(from: profile)
-        self.stats = UserStats()
-        self.loginMethod = .runstr
-    }
     
     
-    // Get display npub (main if linked, otherwise RUNSTR-generated)
-    var displayNostrPublicKey: String {
-        return mainNostrPublicKey ?? runstrNostrPublicKey
-    }
     
-    // Get all npubs configured for this user
-    var allConfiguredNpubs: [String] {
-        var npubs: [String] = [runstrNostrPublicKey]
-        if let mainNpub = mainNostrPublicKey {
-            npubs.append(mainNpub)
-        }
-        npubs.append(contentsOf: additionalNostrPublicKeys)
-        return Array(Set(npubs)) // Remove duplicates
-    }
     
-    // Add an additional npub for stats aggregation
-    mutating func addAdditionalNpub(_ npub: String) -> Bool {
-        guard !npub.isEmpty,
-              npub.hasPrefix("npub1"),
-              npub != runstrNostrPublicKey,
-              npub != mainNostrPublicKey,
-              !additionalNostrPublicKeys.contains(npub) else {
-            return false
-        }
-        
-        additionalNostrPublicKeys.append(npub)
-        return true
-    }
     
-    // Remove an additional npub
-    mutating func removeAdditionalNpub(_ npub: String) {
-        additionalNostrPublicKeys.removeAll { $0 == npub }
-    }
     
-    // Update stats configuration
-    mutating func updateStatsConfiguration(_ config: StatsConfiguration) {
-        self.statsConfiguration = config
-    }
-    
-    // Toggle delegation signing
-    mutating func setDelegationSigning(_ enabled: Bool) {
-        self.isDelegatedSigning = enabled
-    }
-    
-    // MARK: - Subscription Management
-    
-    // Easy access to current subscription tier
-    var subscriptionTier: SubscriptionTier {
-        return subscriptionStatus.tier
-    }
-    
-    // Check if user has an active subscription
-    var hasActiveSubscription: Bool {
-        return subscriptionStatus.isActive && !subscriptionStatus.isExpired
-    }
-    
-    // Update subscription status after purchase or renewal
-    mutating func updateSubscriptionStatus(_ newStatus: SubscriptionStatus) {
-        self.subscriptionStatus = newStatus
-    }
-    
-    // Cancel subscription (keeps active until expiration)
-    mutating func cancelSubscription() {
-        self.subscriptionStatus = SubscriptionStatus(
-            tier: subscriptionStatus.tier,
-            isActive: subscriptionStatus.isActive,
-            expirationDate: subscriptionStatus.expirationDate,
-            autoRenew: false,
-            paymentMethod: subscriptionStatus.paymentMethod,
-            purchaseDate: subscriptionStatus.purchaseDate
-        )
-    }
-    
-    // Check if user can access tier-specific features
-    func canAccessFeature(requiredTier: SubscriptionTier) -> Bool {
-        guard hasActiveSubscription else {
-            return requiredTier == .none
-        }
-        
-        let tierOrder: [SubscriptionTier] = [.none, .member, .captain, .organization]
-        guard let currentIndex = tierOrder.firstIndex(of: subscriptionStatus.tier),
-              let requiredIndex = tierOrder.firstIndex(of: requiredTier) else {
-            return false
-        }
-        
-        return currentIndex >= requiredIndex
-    }
 }
 
 enum LoginMethod: String, Codable {
     case apple
-    case runstr // RUNSTR native login with local key storage
-    case email // Future implementation
 }
 
 struct NostrProfile: Codable {
@@ -212,7 +92,7 @@ struct FitnessGoals: Codable {
 struct UserPreferences: Codable {
     var notificationsEnabled: Bool = true
     var musicAutoPlay: Bool = true
-    var privacyLevel: PrivacyLevel = .team
+    var privacyLevel: PrivacyLevel = .public
 }
 
 struct UserStats: Codable {
@@ -220,20 +100,15 @@ struct UserStats: Codable {
     var totalWorkouts: Int = 0
     var currentStreak: Int = 0
     var longestStreak: Int = 0
-    var totalSatsEarned: Int = 0
-    var totalStreakSatsEarned: Int = 0
-    var weeklyStreaksCompleted: Int = 0
     var lastWorkoutDate: Date = Date.distantPast
     var lastUpdated: Date = Date()
     
-    // MARK: - Streak Methods
+    // MARK: - Stats Methods
     
     /// Update stats after a workout
-    mutating func recordWorkout(_ workout: Workout, streakReward: Int) {
+    mutating func recordWorkout(_ workout: Workout) {
         totalDistance += workout.distance
         totalWorkouts += 1
-        totalSatsEarned += workout.rewardAmount + streakReward
-        totalStreakSatsEarned += streakReward
         lastWorkoutDate = workout.startTime
         lastUpdated = Date()
     }
@@ -242,14 +117,6 @@ struct UserStats: Codable {
     mutating func updateStreak(current: Int, longest: Int) {
         currentStreak = current
         longestStreak = max(longestStreak, longest)
-        lastUpdated = Date()
-    }
-    
-    /// Record completion of weekly streak challenge
-    mutating func recordWeeklyStreakCompletion(bonus: Int) {
-        weeklyStreaksCompleted += 1
-        totalSatsEarned += bonus
-        totalStreakSatsEarned += bonus
         lastUpdated = Date()
     }
     
@@ -275,43 +142,18 @@ struct UserStats: Codable {
         guard totalWorkouts > 0 else { return 0.0 }
         return totalDistance / Double(totalWorkouts)
     }
-    
-    /// Get streak completion rate
-    var streakCompletionRate: Double {
-        guard totalWorkouts > 0 else { return 0.0 }
-        // Rough estimation based on weeks since starting
-        let daysSinceStart = Calendar.current.dateComponents([.day], from: lastUpdated.addingTimeInterval(-Double(totalWorkouts) * 86400), to: Date()).day ?? 1
-        let possibleWeeks = max(1, daysSinceStart / 7)
-        return Double(weeklyStreaksCompleted) / Double(possibleWeeks)
-    }
 }
-
-
 
 enum ActivityType: String, Codable, CaseIterable {
     case running = "running"
     case walking = "walking"
     case cycling = "cycling"
-    case strengthTraining = "strength_training"
-    case yoga = "yoga"
-    case swimming = "swimming"
-    case functionalStrengthTraining = "functional_strength_training"
-    case hiit = "hiit"
-    case crossTraining = "cross_training"
-    case flexibility = "flexibility"
     
     var displayName: String {
         switch self {
         case .running: return "Running"
         case .walking: return "Walking"
         case .cycling: return "Cycling"
-        case .strengthTraining: return "Strength Training"
-        case .yoga: return "Yoga"
-        case .swimming: return "Swimming"
-        case .functionalStrengthTraining: return "Functional Strength"
-        case .hiit: return "HIIT"
-        case .crossTraining: return "Cross Training"
-        case .flexibility: return "Flexibility"
         }
     }
     
@@ -320,13 +162,30 @@ enum ActivityType: String, Codable, CaseIterable {
         case .running: return "figure.run"
         case .walking: return "figure.walk"
         case .cycling: return "bicycle"
-        case .strengthTraining: return "dumbbell"
-        case .yoga: return "figure.mind.and.body"
-        case .swimming: return "figure.pool.swim"
-        case .functionalStrengthTraining: return "figure.strengthtraining.functional"
-        case .hiit: return "timer"
-        case .crossTraining: return "figure.cross.training"
-        case .flexibility: return "figure.flexibility"
         }
     }
+    
+    var hkWorkoutActivityType: HKWorkoutActivityType {
+        switch self {
+        case .running: return .running
+        case .walking: return .walking
+        case .cycling: return .cycling
+        }
+    }
+}
+
+// Supporting types that need to be defined
+
+
+enum ActivityLevel: String, Codable {
+    case beginner
+    case intermediate  
+    case advanced
+    case expert
+}
+
+enum PrivacyLevel: String, Codable {
+    case `private`
+    case friends
+    case `public`
 }

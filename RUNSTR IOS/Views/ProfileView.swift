@@ -4,14 +4,10 @@ struct ProfileView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var nostrService: NostrService
+    @EnvironmentObject var workoutStorage: WorkoutStorage
     @State private var showingSettings = false
-    @State private var showingWalletView = false
-    @State private var statsService: StatsService?
     @State private var isLoading = false
     @State private var selectedActivity: ActivityType = .running
-    
-    // Mock wallet balance to match dashboard
-    @State private var mockWalletBalance: Int = 2500
     
     var body: some View {
         NavigationView {
@@ -24,30 +20,20 @@ struct ProfileView: View {
                         // Profile info section
                         profileInfoSection(user: user)
                         
+                        // Nostr identity section
+                        nostrIdentitySection(user: user)
+                        
                         // Key stats overview cards
                         keyStatsSection(user: user)
                         
-                        // Weekly progress section
-                        weeklyProgressSection(user: user)
+                        // Activity overview
+                        activityOverviewSection(user: user)
                         
-                        // Personal records section
-                        personalRecordsSection()
-                        
-                        // Recent activity section
-                        recentActivitySection()
-                    } else {
-                        // Not logged in state
-                        VStack(spacing: RunstrSpacing.md) {
-                            Image(systemName: "person.circle")
-                                .font(.system(size: 60))
-                                .foregroundColor(.runstrGray)
-                            
-                            Text("Sign in to view your profile")
-                                .font(.runstrHeadline)
-                                .foregroundColor(.runstrWhite)
-                        }
-                        .padding(.top, RunstrSpacing.xxl)
+                        // Recent workouts list
+                        recentWorkoutsSection
                     }
+                    
+                    Spacer(minLength: 100)
                 }
                 .padding(.horizontal, RunstrSpacing.md)
                 .padding(.top, RunstrSpacing.md)
@@ -57,21 +43,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
-        }
-        .sheet(isPresented: $showingWalletView) {
-            WalletView()
-        }
-        .onAppear {
-            if statsService == nil {
-                statsService = StatsService(
-                    healthKitService: healthKitService,
-                    nostrService: nostrService,
-                    authService: authService
-                )
-            }
-            Task {
-                await statsService?.fetchPersonalRecords()
-            }
         }
     }
     
@@ -111,19 +82,6 @@ struct ProfileView: View {
             
             Spacer()
             
-            // Wallet balance button
-            Button {
-                showingWalletView = true
-            } label: {
-                Text("\(mockWalletBalance)")
-                    .font(.title2)
-                    .foregroundColor(.runstrWhite)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, RunstrSpacing.md)
-                    .padding(.vertical, RunstrSpacing.sm)
-            }
-            .runstrCard()
-            
             // Settings button
             Button {
                 showingSettings = true
@@ -135,299 +93,296 @@ struct ProfileView: View {
         }
     }
     
-    // MARK: - Profile Info Section
     private func profileInfoSection(user: User) -> some View {
         VStack(spacing: RunstrSpacing.md) {
-            // Profile picture and name
-            HStack(spacing: RunstrSpacing.md) {
-                // Profile picture
-                if let profilePicture = user.profile.profilePicture, !profilePicture.isEmpty {
-                    AsyncImage(url: URL(string: profilePicture)) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Image(systemName: "person.circle.fill")
-                            .font(.system(size: 50))
+            // Profile picture placeholder
+            Circle()
+                .fill(Color.runstrGray.opacity(0.3))
+                .frame(width: 80, height: 80)
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .font(.title)
+                        .foregroundColor(.runstrGray)
+                )
+            
+            // User info
+            VStack(spacing: RunstrSpacing.xs) {
+                Text(user.profile.displayName.isEmpty ? "RUNSTR User" : user.profile.displayName)
+                    .font(.runstrTitle)
+                    .foregroundColor(.runstrWhite)
+                
+                if !user.profile.about.isEmpty {
+                    Text(user.profile.about)
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrGray)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .padding(RunstrSpacing.lg)
+        .runstrCard()
+    }
+    
+    private func nostrIdentitySection(user: User) -> some View {
+        VStack(alignment: .leading, spacing: RunstrSpacing.md) {
+            HStack {
+                Image(systemName: "at")
+                    .foregroundColor(.purple)
+                Text("Nostr Identity")
+                    .font(.runstrSubheadline)
+                    .foregroundColor(.runstrWhite)
+                Spacer()
+                Circle()
+                    .fill(nostrService.isConnected ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+            }
+            
+            VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                Text("Public Key (npub)")
+                    .font(.runstrCaption)
+                    .foregroundColor(.runstrGray)
+                
+                Button {
+                    UIPasteboard.general.string = user.nostrPublicKey
+                } label: {
+                    HStack {
+                        Text(user.nostrPublicKey)
+                            .font(.runstrSmall)
+                            .foregroundColor(.runstrWhite)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "doc.on.doc")
+                            .font(.runstrCaption)
                             .foregroundColor(.runstrGray)
                     }
-                    .frame(width: 60, height: 60)
-                    .clipShape(Circle())
-                } else {
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 60))
+                }
+            }
+            
+            if nostrService.isConnected {
+                Text("Connected to Nostr relays - ready to post workout summaries")
+                    .font(.runstrCaption)
+                    .foregroundColor(.green)
+            } else {
+                Text("Not connected to Nostr relays")
+                    .font(.runstrCaption)
+                    .foregroundColor(.red)
+            }
+        }
+        .padding(RunstrSpacing.lg)
+        .runstrCard()
+    }
+    
+    private func keyStatsSection(user: User) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: RunstrSpacing.md) {
+            // Total workouts
+            VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                HStack {
+                    Image(systemName: "figure.run")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                    Text("Workouts")
+                        .font(.runstrCaption)
                         .foregroundColor(.runstrGray)
                 }
                 
-                VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
-                    // Display name
-                    Text(user.profile.displayName.isEmpty ? "RUNSTR User" : user.profile.displayName)
-                        .font(.runstrHeadline)
+                Text("\(user.stats.totalWorkouts)")
+                    .font(.runstrMetric)
+                    .foregroundColor(.runstrWhite)
+                
+                Text("total")
+                    .font(.runstrSmall)
+                    .foregroundColor(.runstrGray)
+            }
+            .padding(RunstrSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .runstrCard()
+            
+            // Total distance
+            VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                HStack {
+                    Image(systemName: "location")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                    Text("Distance")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                }
+                
+                Text(user.stats.formattedTotalDistance)
+                    .font(.runstrMetric)
+                    .foregroundColor(.runstrWhite)
+                
+                Text("total")
+                    .font(.runstrSmall)
+                    .foregroundColor(.runstrGray)
+            }
+            .padding(RunstrSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .runstrCard()
+            
+            // Current streak
+            VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                HStack {
+                    Image(systemName: "flame")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                    Text("Streak")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                }
+                
+                Text("\(user.stats.currentStreak)")
+                    .font(.runstrMetric)
+                    .foregroundColor(.runstrWhite)
+                
+                Text("days")
+                    .font(.runstrSmall)
+                    .foregroundColor(.runstrGray)
+            }
+            .padding(RunstrSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .runstrCard()
+            
+            // Longest streak
+            VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
+                HStack {
+                    Image(systemName: "trophy")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                    Text("Best")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
+                }
+                
+                Text("\(user.stats.longestStreak)")
+                    .font(.runstrMetric)
+                    .foregroundColor(.runstrWhite)
+                
+                Text("days")
+                    .font(.runstrSmall)
+                    .foregroundColor(.runstrGray)
+            }
+            .padding(RunstrSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .runstrCard()
+        }
+    }
+    
+    private func activityOverviewSection(user: User) -> some View {
+        VStack(alignment: .leading, spacing: RunstrSpacing.md) {
+            HStack {
+                Image(systemName: "chart.bar")
+                    .foregroundColor(.runstrWhite)
+                Text("Activity Overview")
+                    .font(.runstrSubheadline)
+                    .foregroundColor(.runstrWhite)
+            }
+            
+            VStack(spacing: RunstrSpacing.sm) {
+                HStack {
+                    Text("Average per workout:")
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrGray)
+                    Spacer()
+                    Text(String(format: "%.1f km", user.stats.averageDistancePerWorkout / 1000))
+                        .font(.runstrBody)
                         .foregroundColor(.runstrWhite)
-                    
-                    // Subscription tier
-                    HStack(spacing: RunstrSpacing.xs) {
-                        Text(user.subscriptionTier.displayName)
-                            .font(.runstrCaptionMedium)
-                            .foregroundColor(user.subscriptionTier == .none ? .runstrGray : .runstrAccent)
+                }
+                
+                HStack {
+                    Text("Last workout:")
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrGray)
+                    Spacer()
+                    Text(formatLastWorkoutDate(user.stats.lastWorkoutDate))
+                        .font(.runstrBody)
+                        .foregroundColor(.runstrWhite)
+                }
+            }
+        }
+        .padding(RunstrSpacing.lg)
+        .runstrCard()
+    }
+    
+    private var recentWorkoutsSection: some View {
+        VStack(alignment: .leading, spacing: RunstrSpacing.md) {
+            HStack {
+                Image(systemName: "list.bullet")
+                    .foregroundColor(.runstrWhite)
+                Text("Recent Workouts")
+                    .font(.runstrSubheadline)
+                    .foregroundColor(.runstrWhite)
+                
+                Spacer()
+                
+                NavigationLink("See All") {
+                    AllWorkoutsView()
+                }
+                .font(.runstrCaption)
+                .foregroundColor(.orange)
+            }
+            
+            VStack(spacing: RunstrSpacing.xs) {
+                let recentWorkouts = workoutStorage.getRecentWorkouts(limit: 5)
+                
+                if recentWorkouts.isEmpty {
+                    VStack(spacing: RunstrSpacing.sm) {
+                        Image(systemName: "figure.run")
+                            .font(.system(size: 40))
+                            .foregroundColor(.runstrGray)
                         
-                        // NIP-05 verification badge
-                        if let nip05 = user.profile.nip05, !nip05.isEmpty {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.runstrSmall)
-                                .foregroundColor(.runstrAccent)
+                        Text("No workouts yet")
+                            .font(.runstrBody)
+                            .foregroundColor(.runstrGray)
+                        
+                        Text("Start your first workout to see it here")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.vertical, RunstrSpacing.xl)
+                } else {
+                    ForEach(recentWorkouts, id: \.id) { workout in
+                        NavigationLink {
+                            WorkoutDetailView(workout: workout)
+                        } label: {
+                            WorkoutRowView(workout: workout)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        
+                        if workout.id != recentWorkouts.last?.id {
+                            Divider()
+                                .background(Color.runstrGray.opacity(0.3))
                         }
                     }
                 }
-                
-                Spacer()
             }
-            
-            // Bio if available
-            if !user.profile.about.isEmpty {
-                Text(user.profile.about)
-                    .font(.runstrCaption)
-                    .foregroundColor(.runstrGray)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(RunstrSpacing.md)
-        .runstrCard()
-    }
-    
-    // MARK: - Key Stats Section
-    private func keyStatsSection(user: User) -> some View {
-        VStack(spacing: RunstrSpacing.md) {
-            HStack {
-                Text("Your Stats")
-                    .font(.runstrHeadline)
-                    .foregroundColor(.runstrWhite)
-                Spacer()
-            }
-            
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: RunstrSpacing.md) {
-                // Total Distance
-                ProfileStatCard(
-                    title: "Total Distance",
-                    value: user.stats.formattedTotalDistance
-                )
-                
-                // Total Workouts
-                ProfileStatCard(
-                    title: "Total Workouts",
-                    value: "\(user.stats.totalWorkouts)"
-                )
-                
-                // Current Streak
-                ProfileStatCard(
-                    title: "Current Streak",
-                    value: "\(user.stats.currentStreak) days"
-                )
-                
-                // Total Sats Earned
-                ProfileStatCard(
-                    title: "Sats Earned",
-                    value: "\(user.stats.totalSatsEarned)"
-                )
-            }
-        }
-        .padding(RunstrSpacing.md)
-        .runstrCard()
-    }
-    
-    // MARK: - Weekly Progress Section
-    private func weeklyProgressSection(user: User) -> some View {
-        VStack(spacing: RunstrSpacing.md) {
-            HStack {
-                Text("Weekly Goals")
-                    .font(.runstrHeadline)
-                    .foregroundColor(.runstrWhite)
-                Spacer()
-            }
-            
-            VStack(spacing: RunstrSpacing.md) {
-                // Distance progress
-                WeeklyProgressView(
-                    title: "Distance Goal",
-                    current: getCurrentWeekDistance(user: user),
-                    target: user.profile.fitnessGoals.weeklyDistanceTarget,
-                    unit: "km",
-                    color: .runstrAccent
-                )
-                
-                // Workout progress
-                WeeklyProgressView(
-                    title: "Workout Goal",
-                    current: Double(getCurrentWeekWorkouts(user: user)),
-                    target: Double(user.profile.fitnessGoals.weeklyWorkoutTarget),
-                    unit: "workouts",
-                    color: .green
-                )
-            }
-        }
-        .padding(RunstrSpacing.md)
-        .runstrCard()
-    }
-    
-    // MARK: - Personal Records Section
-    private func personalRecordsSection() -> some View {
-        VStack(spacing: RunstrSpacing.md) {
-            HStack {
-                Text("Personal Records")
-                    .font(.runstrHeadline)
-                    .foregroundColor(.runstrWhite)
-                Spacer()
-                
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                }
-            }
-            
-            if let records = statsService?.personalRecords[selectedActivity], !records.isEmpty {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: RunstrSpacing.sm) {
-                    ForEach(records) { record in
-                        PersonalRecordCard(record: record)
-                    }
-                }
-            } else {
-                Text("No records yet for \(selectedActivity.displayName)")
-                    .font(.runstrCaption)
-                    .foregroundColor(.runstrGray)
-                    .padding(.vertical, RunstrSpacing.lg)
-            }
-        }
-        .padding(RunstrSpacing.md)
-        .runstrCard()
-    }
-    
-    // MARK: - Recent Activity Section
-    private func recentActivitySection() -> some View {
-        VStack(spacing: RunstrSpacing.md) {
-            HStack {
-                Text("Recent Activity")
-                    .font(.runstrHeadline)
-                    .foregroundColor(.runstrWhite)
-                Spacer()
-            }
-            
-            Text("Recent workouts will appear here")
-                .font(.runstrCaption)
-                .foregroundColor(.runstrGray)
-                .padding(.vertical, RunstrSpacing.lg)
-        }
-        .padding(RunstrSpacing.md)
-        .runstrCard()
-    }
-    
-    // MARK: - Helper Functions
-    private func getCurrentWeekDistance(user: User) -> Double {
-        // This would need to be calculated from recent workouts
-        // For now, return a placeholder calculation
-        let daysSinceLastWorkout = user.stats.daysSinceLastWorkout()
-        if daysSinceLastWorkout <= 7 {
-            return min(user.stats.totalDistance / 1000, user.profile.fitnessGoals.weeklyDistanceTarget)
-        }
-        return 0.0
-    }
-    
-    private func getCurrentWeekWorkouts(user: User) -> Int {
-        // This would need to be calculated from recent workouts
-        // For now, return a placeholder calculation
-        let daysSinceLastWorkout = user.stats.daysSinceLastWorkout()
-        if daysSinceLastWorkout <= 7 {
-            return min(user.stats.totalWorkouts, user.profile.fitnessGoals.weeklyWorkoutTarget)
-        }
-        return 0
-    }
-}
-
-// MARK: - Supporting Views
-
-struct ProfileStatCard: View {
-    let title: String
-    let value: String
-    
-    var body: some View {
-        VStack(spacing: RunstrSpacing.sm) {
-            VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
-                Text(value)
-                    .font(.runstrMetricSmall)
-                    .foregroundColor(.runstrWhite)
-                
-                Text(title)
-                    .font(.runstrSmall)
-                    .foregroundColor(.runstrGray)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(RunstrSpacing.md)
-        .runstrCard()
-    }
-}
-
-struct WeeklyProgressView: View {
-    let title: String
-    let current: Double
-    let target: Double
-    let unit: String
-    let color: Color
-    
-    private var progress: Double {
-        guard target > 0 else { return 0 }
-        return min(current / target, 1.0)
-    }
-    
-    var body: some View {
-        VStack(spacing: RunstrSpacing.sm) {
-            HStack {
-                Text(title)
-                    .font(.runstrBodyMedium)
-                    .foregroundColor(.runstrWhite)
-                Spacer()
-                
-                Text("\(String(format: "%.1f", current))/\(String(format: "%.0f", target)) \(unit)")
-                    .font(.runstrCaptionMedium)
-                    .foregroundColor(.runstrGray)
-            }
-            
-            ProgressView(value: progress)
-                .progressViewStyle(LinearProgressViewStyle(tint: color))
-                .background(Color.runstrGrayDark)
-                .cornerRadius(RunstrRadius.sm / 2)
+            .padding(RunstrSpacing.md)
+            .runstrCard()
         }
     }
-}
-
-struct PersonalRecordCard: View {
-    let record: PersonalRecord
     
-    var body: some View {
-        VStack(spacing: RunstrSpacing.xs) {
-            HStack {
-                Text(record.recordType.displayName)
-                    .font(.runstrSmall)
-                    .foregroundColor(.runstrGray)
-                    .lineLimit(1)
-                
-                Spacer()
-                
-                if record.isNewRecord {
-                    Image(systemName: "star.fill")
-                        .font(.runstrSmall)
-                        .foregroundColor(.runstrWhite)
-                }
-            }
-            
-            Text(record.formattedValue)
-                .font(.runstrCaptionMedium)
-                .foregroundColor(.runstrWhite)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    private func formatLastWorkoutDate(_ date: Date) -> String {
+        if date == Date.distantPast {
+            return "Never"
         }
-        .padding(RunstrSpacing.sm)
-        .background(Color.runstrCardBackground)
-        .cornerRadius(RunstrRadius.sm)
+        
+        let daysSince = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0
+        
+        if daysSince == 0 {
+            return "Today"
+        } else if daysSince == 1 {
+            return "Yesterday"
+        } else if daysSince < 7 {
+            return "\(daysSince) days ago"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            return formatter.string(from: date)
+        }
     }
 }
 

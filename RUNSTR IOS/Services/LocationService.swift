@@ -66,23 +66,29 @@ class LocationService: NSObject, ObservableObject {
             return
         }
         
-        isTracking = true
-        isPaused = false
-        route.removeAll()
-        totalDistance = 0.0
-        lastLocation = nil
+        // Update @Published properties on main thread
+        DispatchQueue.main.async {
+            self.isTracking = true
+            self.isPaused = false
+            self.route.removeAll()
+            self.totalDistance = 0.0
+            self.lastLocation = nil
+            self.currentSpeed = 0.0
+            self.currentPace = 0.0
+        }
+        
+        // Configure location manager (safe to do on any thread)
         startTime = Date()
         pausedTime = 0
-        currentSpeed = 0.0
-        currentPace = 0.0
-        
-        // Configure for high accuracy tracking
         locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.distanceFilter = minimumDistance
         
-        // Enable background location for workout tracking
+        // Enable background location for workout tracking (only if authorized)
         if authorizationStatus == .authorizedAlways {
             locationManager.allowsBackgroundLocationUpdates = true
+        } else {
+            // Don't enable background updates if we don't have permission
+            locationManager.allowsBackgroundLocationUpdates = false
         }
         locationManager.pausesLocationUpdatesAutomatically = false
         
@@ -91,17 +97,31 @@ class LocationService: NSObject, ObservableObject {
     }
     
     func stopTracking() {
-        isTracking = false
-        isPaused = false
-        locationManager.stopUpdatingLocation()
-        locationManager.allowsBackgroundLocationUpdates = false
+        // Update @Published properties on main thread
+        DispatchQueue.main.async {
+            self.isTracking = false
+            self.isPaused = false
+        }
         
-        print("✅ Stopped GPS tracking. Total distance: \(String(format: "%.2f", totalDistance/1000))km")
+        locationManager.stopUpdatingLocation()
+        
+        // Safely disable background location updates
+        if authorizationStatus == .authorizedAlways {
+            locationManager.allowsBackgroundLocationUpdates = false
+        }
+        
+        // Access totalDistance safely for logging
+        let distance = totalDistance
+        print("✅ Stopped GPS tracking. Total distance: \(String(format: "%.2f", distance/1000))km")
     }
     
     func pauseTracking() {
         guard isTracking else { return }
-        isPaused = true
+        
+        // Update @Published properties on main thread
+        DispatchQueue.main.async {
+            self.isPaused = true
+        }
         
         // Calculate paused time
         if let startTime = startTime {
@@ -114,7 +134,12 @@ class LocationService: NSObject, ObservableObject {
     
     func resumeTracking() {
         guard isTracking else { return }
-        isPaused = false
+        
+        // Update @Published properties on main thread
+        DispatchQueue.main.async {
+            self.isPaused = false
+        }
+        
         startTime = Date() // Reset start time for pause calculation
         
         locationManager.startUpdatingLocation()
@@ -137,7 +162,11 @@ class LocationService: NSObject, ObservableObject {
     func getElevationGain() -> Double {
         var elevationGain: Double = 0.0
         
-        for i in 1..<route.count {
+        // Ensure we have at least 2 route points before creating range
+        let routeCount = route.count
+        guard routeCount >= 2 else { return 0.0 }
+        
+        for i in 1..<routeCount {
             let altitudeDifference = route[i].altitude - route[i-1].altitude
             if altitudeDifference > 0 {
                 elevationGain += altitudeDifference

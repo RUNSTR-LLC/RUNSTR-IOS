@@ -2,20 +2,20 @@
 
 ## Project Overview
 
-RUNSTR is a fitness club monetization platform that transforms fitness communities into thriving businesses. Organizations and influencers use RUNSTR to generate recurring revenue through member subscriptions and virtual event ticket sales, while members earn Bitcoin rewards for their workouts.
+RUNSTR is a minimalistic fitness tracking app focused on core workout functionality. The app provides clean, simple workout tracking with HealthKit integration and basic Nostr workout sharing.
 
-**Platform Value Proposition:**
-- **For Organizations/Influencers**: Turn your fitness following into a sustainable business with monthly recurring revenue and virtual event income
-- **For Members**: Keep using your favorite fitness apps (Apple Watch, Garmin, Strava) while earning Bitcoin rewards through team memberships
+**Core Value Proposition:**
+- **Simple Workout Tracking**: Clean, distraction-free fitness tracking
+- **Universal Sync**: Works with any fitness app through HealthKit integration
+- **Privacy-First**: Your workout data stays on your device
+- **Nostr Integration**: Optional workout sharing to decentralized social networks
 
 **Key Features:**
-- Universal workout sync via HealthKit (all workout types supported)
-- Three-tier subscription model (Free, Member: $3.99/mo, Captain: $19.99/mo, Organization: $49.99/mo)
-- Team creation and management platform
-- Virtual fitness events with ticket sales
-- Bitcoin rewards via Lightning/Cashu
-- Revenue sharing for team captains ($1 per member/month)
-- 100% event ticket revenue for organizers
+- Universal workout sync via HealthKit (running, walking, cycling supported)
+- Real-time workout tracking with GPS and heart rate
+- Clean, minimal user interface
+- Optional Nostr workout publishing
+- Local workout history and statistics
 
 ## Technical Architecture
 
@@ -25,35 +25,29 @@ RUNSTR is a fitness club monetization platform that transforms fitness communiti
 - **State Management**: @StateObject, @EnvironmentObject, @Published
 
 ### Key Integrations
-- **HealthKit**: Universal workout data sync (running, cycling, walking, strength, yoga, swimming)
+- **HealthKit**: Universal workout data sync (running, cycling, walking)
 - **Apple Watch**: Seamless workout tracking
-- **Garmin/Strava**: Coming soon - additional data sources
-- **Zebedee Lightning**: Bitcoin rewards and payments
-- **Cashu Protocol**: Privacy-preserving ecash system
-- **StoreKit 2**: Subscription management
-- **CloudKit**: Team data synchronization
+- **NostrSDK**: Optional workout sharing to Nostr relays
+- **Core Location**: GPS tracking for outdoor workouts
 
 ### Data Models
-- `User`: Authentication, subscription tier, wallet, team memberships
-- `Workout`: Synced from HealthKit, all activity types
-- `Team`: Captain-managed groups with revenue tracking
-- `Event`: Virtual competitions with ticket sales
-- `Subscription`: Tier management and revenue distribution
-- `Wallet`: Lightning/Cashu for rewards and payments
+- `User`: Basic authentication and preferences
+- `Workout`: Local workout storage with HealthKit sync (running, walking, cycling)
+- `ActivityType`: Supported workout types enumeration
 
 ## Project Structure
 
 ```
 RUNSTR IOS/
-├── Models/           # Data models (User, Workout, Team, Event)
-├── Services/         # Core services (Auth, HealthKit, Location)  
-├── Views/           # SwiftUI views organized by feature
-│   ├── DashboardView.swift    # Activity tracking & sync
-│   ├── TeamsView.swift        # Team discovery/management/chat
-│   ├── EventsView.swift       # Virtual events & registration
-│   ├── StatsView.swift        # Personal & team analytics
-│   ├── LeagueView.swift       # Coming soon placeholder
-│   └── SettingsView.swift     # Account & subscription
+├── Models/           # Core data models (User, Workout)
+├── Services/         # Core services (Auth, HealthKit, Location, WorkoutStorage)  
+├── Views/           # SwiftUI views
+│   ├── WorkoutView.swift         # Live workout tracking
+│   ├── DashboardView.swift       # Workout history & stats
+│   ├── AllWorkoutsView.swift     # Complete workout list
+│   ├── WorkoutDetailView.swift   # Individual workout details
+│   ├── ProfileView.swift         # User profile & settings
+│   └── SettingsView.swift        # App preferences
 ├── Extensions/      # Swift extensions
 ├── Utilities/       # Helper functions and constants
 └── Assets.xcassets/ # App icons, colors, images
@@ -89,9 +83,9 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 
 ### AuthenticationService
 - Apple Sign-In integration
-- Nostr keypair generation (npub/nsec)
-- Subscription tier management
+- Optional Nostr keypair generation (npub/nsec)
 - Secure key storage in iOS Keychain
+- Basic user profile management
 
 ### HealthKitService  
 - Workout data reading/writing
@@ -101,130 +95,98 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 
 ### LocationService
 - GPS tracking for outdoor workouts
-- Route mapping and analysis
-- Battery-optimized background tracking
+- Route recording and basic mapping
+- Battery-optimized location tracking
 
-## Platform Revenue Model
+### WorkoutStorage
+- Local workout data persistence
+- Core Data integration for workout history
+- Simple data management without cloud sync
 
-### Revenue Distribution (Member Subscription: $3.99/month)
-- **$1.00** → RUNSTR platform operations
-- **$1.00** → Selected team captain earnings
-- **$1.00** → Charity (OpenSats/HRF/ALS)
-- **$0.99** → Member rewards pool
+## App Philosophy
 
-### Captain Earnings Potential
-- **Per Member**: $1.00/month recurring revenue
-- **100 Members**: $100/month passive income
-- **500 Members**: $500/month (max team size)
-- **Virtual Events**: Keep 100% of ticket sales
+### Minimalistic Approach
+- **Core Functionality Only**: Focus on essential workout tracking features
+- **No Monetization**: Free app with no subscriptions or in-app purchases
+- **Privacy-First**: All data stored locally on device
+- **No Social Features**: Optional Nostr sharing only
+- **Clean Interface**: Distraction-free workout experience
 
-### Organization Benefits
-- **Event Revenue**: 100% of virtual event ticket sales
-- **No Platform Fees**: On event transactions
-- **Sponsorship Opportunities**: Direct brand partnerships
-- **Corporate Programs**: B2B wellness contracts
+## Core Features
 
-## Key Features Implementation
+### HealthKit Integration
+1. **Workout Detection**: Automatic detection of workouts from HealthKit
+2. **Background Sync**: Monitors for new workouts when app is backgrounded
+3. **Supported Activity Types**: Running, cycling, walking
+4. **Historical Import**: Import past workouts on first sync
+5. **Real-time Tracking**: Live metrics during active workouts
 
-### HealthKit Universal Sync
-1. **Automatic Detection**: App detects workouts from any source (Apple Watch, Garmin, Strava)
-2. **Background Sync**: Continuous monitoring for new workouts
-3. **All Activity Types**: Running, cycling, walking, strength training, yoga, swimming, etc.
-4. **Historical Import**: Pull past workouts on first sync
-5. **Real-time Updates**: Live data during active workouts
+### Workout Tracking
+- **Live Metrics**: Real-time heart rate, pace, distance, calories
+- **GPS Routes**: Route mapping for outdoor activities
+- **Workout History**: Simple list of past workouts
+- **Basic Statistics**: Weekly/monthly summaries
+- **Export Data**: Share workout summaries
 
-### Team Platform Features
-- **Team Creation**: Captains set up teams with custom branding and rules
-- **Discovery**: Browse teams by activity type, location, or size
-- **Chat System**: Team communication hub for members
-- **Challenges Tab**: Team-specific competitions and goals
-- **Analytics Dashboard**: Member activity and engagement metrics
-- **Revenue Tracking**: Real-time earnings for captains
+### Optional Features
+- **Nostr Sharing**: Publish workout summaries to Nostr relays
+- **Apple Watch**: Seamless Apple Watch integration
+- **Route Visualization**: Simple maps of GPS-tracked workouts
 
-### Virtual Events System
-- **Event Creation**: Organizations create ticketed virtual races/challenges
-- **Registration**: Members sign up and pay entry fees
-- **Live Leaderboards**: Real-time rankings during events
-- **Prize Distribution**: Automatic Bitcoin rewards to winners
-- **Event Analytics**: Participation and revenue metrics
+## App Features
 
-## Subscription Tiers
-
-### Free Tier
-- Basic activity tracking (7-day history)
-- View public teams and events
-- Minimal streak rewards (1-2 sats)
-- Limited features to encourage upgrades
-
-### Member Tier ($3.99/month)
-- Unlimited activity tracking and history
-- Join unlimited teams
-- Participate in all events and competitions
-- Full team chat access
-- Standard streak rewards (21-100 sats)
-- Export workout data
-- Lightning wallet access
-
-### Captain Tier ($19.99/month)
-- All Member features
-- Create and manage teams (up to 500 members)
-- Earn $1 per team member monthly
-- Create team events and challenges
-- Team analytics dashboard
-- Custom team branding
-- Priority support
-
-### Organization Tier ($49.99/month)
-- All Captain features
-- Create public virtual events
-- Sell event tickets (keep 100% revenue)
-- Advanced analytics and reporting
-- API access for integrations
-- Multiple team management
-- Dedicated account manager
+### Core Functionality (All Free)
+- **Unlimited workout tracking and history**
+- **Full HealthKit integration**
+- **GPS route recording**
+- **Apple Watch support**
+- **Workout data export**
+- **Optional Nostr workout sharing**
+- **Local data storage**
+- **Clean, minimal interface**
 
 ## Testing Strategy
 
 ### Unit Tests
 - Model validation and data persistence
-- Service layer functionality 
-- Reward calculation accuracy
-- Nostr protocol compliance
+- Service layer functionality (HealthKit, Location, WorkoutStorage)
+- Workout calculation accuracy
+- Optional Nostr protocol compliance
 
 ### Integration Tests
 - HealthKit data flow
 - Apple Watch synchronization
-- Cashu wallet operations
-- Nostr relay communication
+- Local data persistence
+- Optional Nostr relay communication
 
 ### UI Tests
-- Onboarding flow completion
+- Basic onboarding flow
 - Workout start/stop functionality
-- Team joining/creation processes
-- Subscription tier selection
+- Workout history navigation
+- Settings configuration
 
 ## Security & Privacy
 
 ### Data Protection
-- Nostr private keys stored in iOS Keychain
+- Optional Nostr private keys stored in iOS Keychain
 - Health data never leaves user's control
-- Cashu ecash tokens self-custodial and private
-- Cryptographic token security via secp256k1
-- No personal data collection beyond fitness metrics
+- All workout data stored locally only
+- No cloud synchronization or data collection
+- Minimal network usage (Nostr sharing only if enabled)
 
 ### Privacy Features
-- User-controlled activity sharing levels
-- Team visibility preferences
-- Anonymous participation options
-- GDPR compliance for EU users
+- All data stays on device
+- Optional Nostr sharing (user controlled)
+- No analytics or telemetry
+- No user account required for core features
 
 ## Deployment
 
 ### App Store Requirements
 - HealthKit usage description in Info.plist
-- Subscription management compliance
-- Bitcoin/cryptocurrency app guidelines adherence
-- Privacy policy and terms of service
+- Location services usage description
+- Privacy policy for optional Nostr features
+- Simple terms of service
 
 ### Release Process
 1. Version bump and changelog update
@@ -239,18 +201,19 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 
 #### NEVER USE MOCK DATA
 - **ABSOLUTELY NO MOCK DATA**: This is a production app. Never create, use, or return mock/fake/sample data.
-- **Real Data Only**: All data must come from actual sources (HealthKit, Nostr, Cashu mint, etc.)
+- **Real Data Only**: All data must come from actual sources (HealthKit, Core Location, local storage)
 - **Empty States**: If no real data exists, show proper empty states, not fake data
 - **Development Testing**: Use real test accounts and actual workouts, not simulated data
 - **Error Handling**: If data sources fail, handle errors gracefully without falling back to mock data
 
-#### NOSTR FRAMEWORK
+#### NOSTR FRAMEWORK (OPTIONAL)
 - **Use nostr-sdk-ios**: We are using the official Nostr SDK for iOS from https://github.com/nostr-sdk/nostr-sdk-ios
 - **Version**: NostrSDK 0.3.0 (confirmed working version)
+- **Optional Integration**: Nostr sharing is completely optional and can be disabled
 - **No Custom Implementations**: Do not implement custom Nostr protocol handling; use the SDK's provided functionality
 - **SDK Features**: Leverage the SDK's built-in support for events, relays, keys, and NIPs
 - **Critical API Note**: Many SDK initializers are `internal` - must use Builder pattern for NostrEvent creation
-- **Reference Documentation**: See `nostr-implementation-fixes-2025.md` for **ACTUAL WORKING** API patterns. This is the ONLY source of truth - do not create other Nostr documentation files.
+- **Reference Documentation**: See `nostr-implementation-fixes-2025.md` for **ACTUAL WORKING** API patterns.
 
 ### Code Conventions
 - SwiftUI view files: PascalCase (e.g., `DashboardView.swift`)
@@ -264,19 +227,19 @@ xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=i
 - Asynchronous Nostr relay communication  
 - Image caching for team/user avatars
 
-### Future Integrations
-- Garmin Connect API for additional device support
-- Advanced AI coaching features
-- Social media sharing capabilities
-- Corporate wellness program APIs
+### Potential Future Enhancements
+- Additional HealthKit data types (swimming, strength training)
+- Improved route visualization
+- Workout data export formats
+- Basic workout statistics and trends
 
 ## Troubleshooting
 
 ### Common Issues
 - **HealthKit Permission Denied**: Ensure physical device testing, check Info.plist
 - **Apple Watch Sync Issues**: Verify WatchKit app installation and permissions
-- **Cashu Wallet Errors**: Check network connectivity and mint status
-- **Nostr Relay Connection**: Test relay accessibility and fallback handling
+- **GPS Location Issues**: Check location permissions and GPS availability
+- **Nostr Connection Issues** (if enabled): Test relay accessibility and network connectivity
 
 ### Debug Commands
 ```bash
@@ -292,78 +255,62 @@ xcrun simctl spawn booted log stream --predicate 'processImagePath contains "RUN
 
 ## Resources
 
-- [Original RUNSTR Project](https://github.com/HealthNoteLabs/Runstr)
-- [NIP-101e Specification](https://github.com/nostr-protocol/nips/pull/101)
-- [Cashu Protocol Documentation](https://docs.cashu.space/)
 - [Apple HealthKit Documentation](https://developer.apple.com/documentation/healthkit/)
 - [SwiftUI Best Practices](https://developer.apple.com/tutorials/swiftui/)
+- [Core Location Documentation](https://developer.apple.com/documentation/corelocation/)
+- [Nostr SDK for iOS](https://github.com/nostr-sdk/nostr-sdk-ios) (for optional features)
 
 ### Project-Specific Documentation
-- [`nostr-implementation-fixes-2025.md`](./nostr-implementation-fixes-2025.md) - **ONLY** source of truth for NostrSDK 0.3.0 API patterns. Contains actual working code that compiles and runs.
-- [`roadmap.md`](./roadmap.md) - Comprehensive platform development roadmap with MVP specifications
+- [`nostr-implementation-fixes-2025.md`](./nostr-implementation-fixes-2025.md) - Working NostrSDK 0.3.0 API patterns (if using Nostr features)
 
 ## MVP Requirements
 
-### Core Platform Features
-The MVP focuses on enabling fitness organizations and influencers to monetize their audience:
+### Core App Features
+The MVP focuses on simple, effective workout tracking:
 
 #### Must Have for MVP Launch
-- [x] **Authentication**: Apple Sign-In + RUNSTR login with secure key storage
-- [x] **HealthKit Sync**: Universal workout tracking from all fitness apps
-- [ ] **Subscription Tiers**: Free, Member ($3.99), Captain ($19.99)
-- [ ] **Team Platform**: Create/join teams with chat and challenges
-- [ ] **Virtual Events**: Ticketed fitness competitions with leaderboards
-- [ ] **Streak Rewards**: Daily workout bonuses (21-100 sats)
-- [ ] **Lightning Integration**: Zebedee for Bitcoin rewards and payments
-- [ ] **Captain Earnings**: $1 per member monthly revenue tracking
+- [x] **HealthKit Integration**: Universal workout tracking from all fitness apps
+- [x] **Real-time Tracking**: Live workout metrics with GPS
+- [x] **Workout History**: Local storage of all workout data
+- [x] **Apple Watch Support**: Seamless Apple Watch integration
+- [ ] **Workout Statistics**: Basic weekly/monthly summaries
+- [ ] **Data Export**: Share workout data
+- [ ] **Optional Nostr Sharing**: Publish workouts to Nostr relays (user choice)
 
 #### UI/UX Requirements
-- **Dashboard**: Activity sync, streak counter, team updates
-- **Teams Tab**: Discover teams, join, team page with chat/challenges
-- **Events Tab**: Browse virtual events, register, view leaderboards
-- **League Tab**: "Season 2 Coming Soon" placeholder
-- **Settings**: Subscription management, account security
+- **Workout View**: Live tracking interface with start/stop/pause
+- **Dashboard**: Recent workouts and basic statistics
+- **All Workouts**: Complete workout history list
+- **Workout Details**: Individual workout information and maps
+- **Profile/Settings**: User preferences and optional Nostr configuration
 
-#### Platform Differentiators
-- **No Music Tab**: Removed as requested, focus on core platform
-- **Universal Sync**: Works with any fitness app through HealthKit
-- **Revenue Sharing**: Transparent revenue distribution to captains
-- **Event Monetization**: 100% ticket revenue for organizations
-- **Real Bitcoin**: Lightning/Cashu integration for actual rewards
-
-### Platform Business Model
-RUNSTR operates as a marketplace connecting fitness organizations with members:
-
-1. **Organizations** create teams and events to generate revenue
-2. **Members** subscribe to teams for $3.99/month (revenue splits 4 ways)
-3. **Virtual Events** provide additional revenue through ticket sales
-4. **Bitcoin Rewards** incentivize member engagement and retention
+#### App Principles
+- **Minimalism**: Clean, distraction-free interface
+- **Privacy**: All data stored locally on device
+- **No Monetization**: Completely free app
+- **No Social Features**: Optional Nostr sharing only
+- **Universal Compatibility**: Works with any fitness app through HealthKit
 
 ## Production Readiness Status
 
-**RUNSTR is transitioning to production-ready implementation. Mock data is being systematically removed.**
+**RUNSTR is a minimalistic workout tracking app ready for production.**
 
 ### ✅ Production-Ready Components
 - **Core Workout Tracking**: Full GPS and HealthKit integration
-- **Cashu Service**: Complete ecash protocol implementation
-- **Reward Calculation**: Real-time workout reward algorithms
-- **Streak System**: Daily streak tracking with weekly reset
-- **User Authentication**: Production Apple Sign-In integration
+- **Real-time Metrics**: Live workout data during sessions
+- **Local Data Storage**: WorkoutStorage with Core Data persistence
+- **Apple Watch Integration**: Seamless workout sync
+- **User Authentication**: Apple Sign-In for optional features
 
 ### 🔄 Currently Being Implemented
-- **Cashu Token Minting**: Connecting reward calculation to actual token generation
-- **Streak Bonus Distribution**: Automatic ecash rewards for daily streaks
-- **Production Mint Integration**: Using https://mint.runstr.app for all operations
-
-### ⚠️ Development/Mock Components (To Be Removed)
-- **NostrService**: Currently using mock NIP-101e event publishing
-- **Team Data**: Mock team events and statistics
-- **BitcoinWalletService**: Legacy service replaced by CashuService
+- **Workout Statistics**: Basic weekly/monthly summaries
+- **Data Export**: Workout sharing capabilities
+- **UI Polish**: Final interface refinements
 
 ### Production Configuration
-- **Cashu Mint**: `https://mint.runstr.app`
-- **Nostr Relays**: Real relay pool for production events
-- **API Keys**: All services configured for production endpoints
+- **Local Storage**: All data stored on device using Core Data
+- **Optional Nostr Relays**: Real relay pool for optional workout sharing
+- **No External Dependencies**: Core functionality works offline
 
 ---
 

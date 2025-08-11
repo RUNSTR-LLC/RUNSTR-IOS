@@ -30,80 +30,8 @@ class AuthenticationService: NSObject, ObservableObject {
         authorizationController.performRequests()
     }
     
-    func signInWithRunstr() {
-        print("🚀 Starting RUNSTR Sign-In with local key storage")
-        isLoading = true
-        
-        // Generate new Nostr keys for RUNSTR login
-        let runstrKeys = NostrKeyPair.generate()
-        print("✅ RUNSTR Nostr keys generated")
-        
-        // Save keys locally (not in Keychain)
-        saveRunstrKeysLocally(runstrKeys)
-        print("✅ RUNSTR keys saved locally")
-        
-        // Create user with RUNSTR login method
-        let user = User(runstrNostrKeys: runstrKeys)
-        print("✅ RUNSTR user object created")
-        
-        saveUserToKeychain(user)
-        print("✅ RUNSTR user saved to keychain")
-        
-        DispatchQueue.main.async {
-            print("✅ Setting RUNSTR authentication state")
-            self.currentUser = user
-            self.isAuthenticated = true
-            self.isLoading = false
-            print("✅ RUNSTR authentication complete - isAuthenticated: \(self.isAuthenticated)")
-        }
-    }
     
-    func signInWithNsec(_ nsec: String) -> Bool {
-        print("🚀 Starting RUNSTR Sign-In with existing nsec")
-        isLoading = true
-        
-        // Validate nsec format
-        guard nsec.hasPrefix("nsec1") && nsec.count > 10 else {
-            print("❌ Invalid nsec format")
-            isLoading = false
-            return false
-        }
-        
-        // Convert nsec to keypair using NostrSDK
-        guard let keypair = Keypair(nsec: nsec) else {
-            print("❌ Failed to create Keypair from nsec")
-            isLoading = false
-            return false
-        }
-        
-        let runstrKeys = NostrKeyPair(
-            privateKey: nsec,
-            publicKey: keypair.publicKey.npub
-        )
-        
-        print("✅ RUNSTR keys restored from nsec")
-        
-        // Save keys locally (not in Keychain)
-        saveRunstrKeysLocally(runstrKeys)
-        print("✅ Restored keys saved locally")
-        
-        // Create user with RUNSTR login method
-        let user = User(runstrNostrKeys: runstrKeys)
-        print("✅ RUNSTR user object created from restored keys")
-        
-        saveUserToKeychain(user)
-        print("✅ RUNSTR user saved to keychain")
-        
-        DispatchQueue.main.async {
-            print("✅ Setting RUNSTR authentication state with restored account")
-            self.currentUser = user
-            self.isAuthenticated = true
-            self.isLoading = false
-            print("✅ RUNSTR account restoration complete - isAuthenticated: \(self.isAuthenticated)")
-        }
-        
-        return true
-    }
+    
     
     
     
@@ -111,11 +39,6 @@ class AuthenticationService: NSObject, ObservableObject {
     
     
     func signOut() {
-        // Clear local storage for RUNSTR users
-        if let user = currentUser, user.loginMethod == .runstr {
-            clearRunstrKeysFromLocal()
-        }
-        
         currentUser = nil
         isAuthenticated = false
         clearUserDataFromKeychain()
@@ -173,72 +96,6 @@ class AuthenticationService: NSObject, ObservableObject {
         SecItemDelete(query as CFDictionary)
     }
     
-    // MARK: - Local Storage Methods (for RUNSTR login)
-    
-    private func saveRunstrKeysLocally(_ keyPair: NostrKeyPair) {
-        let keyData: [String: String] = [
-            "privateKey": keyPair.privateKey,
-            "publicKey": keyPair.publicKey
-        ]
-        
-        do {
-            let data = try JSONEncoder().encode(keyData)
-            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let keysURL = documentsPath.appendingPathComponent("runstr_keys.json")
-            
-            try data.write(to: keysURL)
-            print("✅ RUNSTR keys saved to local storage: \(keysURL.path)")
-        } catch {
-            print("❌ Failed to save RUNSTR keys locally: \(error)")
-        }
-    }
-    
-    private func loadRunstrKeysFromLocal() -> NostrKeyPair? {
-        do {
-            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let keysURL = documentsPath.appendingPathComponent("runstr_keys.json")
-            
-            let data = try Data(contentsOf: keysURL)
-            let keyData = try JSONDecoder().decode([String: String].self, from: data)
-            
-            guard let privateKey = keyData["privateKey"],
-                  let publicKey = keyData["publicKey"] else {
-                return nil
-            }
-            
-            return NostrKeyPair(privateKey: privateKey, publicKey: publicKey)
-        } catch {
-            print("❌ Failed to load RUNSTR keys from local storage: \(error)")
-            return nil
-        }
-    }
-    
-    func exportRunstrPrivateKey() -> String? {
-        guard let user = currentUser, user.loginMethod == .runstr else {
-            return nil
-        }
-        
-        if let localKeys = loadRunstrKeysFromLocal() {
-            return localKeys.privateKey
-        } else {
-            // Fallback to user's stored private key
-            return user.runstrNostrPrivateKey
-        }
-    }
-    
-    private func clearRunstrKeysFromLocal() {
-        do {
-            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let keysURL = documentsPath.appendingPathComponent("runstr_keys.json")
-            
-            if FileManager.default.fileExists(atPath: keysURL.path) {
-                try FileManager.default.removeItem(at: keysURL)
-                print("✅ RUNSTR keys cleared from local storage")
-            }
-        } catch {
-            print("❌ Failed to clear RUNSTR keys from local storage: \(error)")
-        }
-    }
     
     // MARK: - Keychain Methods (for Apple login)
     

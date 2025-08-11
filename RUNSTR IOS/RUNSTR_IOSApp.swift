@@ -13,13 +13,8 @@ struct RUNSTR_IOSApp: App {
     @StateObject private var healthKitService = HealthKitService()
     @StateObject private var locationService = LocationService()
     @StateObject private var workoutSession = WorkoutSession()
-    @StateObject private var subscriptionService = SubscriptionService()
     @StateObject private var nostrService = NostrService()
-    @StateObject private var cashuService = CashuService()
-    @StateObject private var streakService = StreakService()
     @StateObject private var workoutStorage = WorkoutStorage()
-    @StateObject private var teamService = TeamService()
-    @StateObject private var eventService = EventService()
     
     init() {
         // Configuration will be done in onAppear
@@ -32,13 +27,8 @@ struct RUNSTR_IOSApp: App {
                 .environmentObject(healthKitService)
                 .environmentObject(locationService)
                 .environmentObject(workoutSession)
-                .environmentObject(subscriptionService)
                 .environmentObject(nostrService)
-                .environmentObject(cashuService)
-                .environmentObject(streakService)
                 .environmentObject(workoutStorage)
-                .environmentObject(teamService)
-                .environmentObject(eventService)
                 .preferredColorScheme(.dark)
                 .task {
                     // Configure workout session with services first
@@ -47,22 +37,8 @@ struct RUNSTR_IOSApp: App {
                         locationService: locationService
                     )
                     
-                    // Authentication service no longer needs NostrService configuration
-                    
                     // Request permissions on app startup
                     await requestInitialPermissions()
-                    
-                    // Initialize Cashu connection
-                    await cashuService.connectToMint()
-                    
-                    // Initialize team stats aggregator
-                    teamService.setupStatsAggregator(
-                        healthKitService: healthKitService,
-                        workoutStorage: workoutStorage
-                    )
-                    
-                    // Schedule periodic team stats updates
-                    teamService.scheduleStatsUpdates()
                 }
         }
     }

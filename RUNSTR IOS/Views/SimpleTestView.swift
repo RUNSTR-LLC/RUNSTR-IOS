@@ -75,7 +75,7 @@ struct SimpleTestView: View {
                                 .font(.caption)
                                 .foregroundColor(.gray)
                             
-                            Text("npub: \(user.displayNostrPublicKey)")
+                            Text("npub: \(user.nostrPublicKey)")
                                 .font(.system(size: 10, weight: .regular, design: .monospaced))
                                 .foregroundColor(.blue)
                                 .lineLimit(1)
@@ -106,8 +106,8 @@ struct SimpleTestView: View {
     }
     
     private func testRunstrSignIn() {
-        authService.signInWithRunstr()
-        authStatus = authService.isAuthenticated ? "Success!" : "RUNSTR Sign-In completed"
+        authService.signInWithApple()
+        authStatus = authService.isAuthenticated ? "Success!" : "Apple Sign-In completed"
     }
 }
 

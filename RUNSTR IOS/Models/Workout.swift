@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import HealthKit
+import MapKit
 
 struct Workout: Identifiable, Codable {
     let id: String
@@ -19,10 +20,58 @@ struct Workout: Identifiable, Codable {
     var elevationGain: Double?
     let weather: WeatherCondition?
     let nostrEventID: String? // Reference to published NIP-101e note
-    var rewardAmount: Int // sats earned
-    let isTeamChallenge: Bool
-    let teamID: String?
-    let eventID: String?
+    var rewardAmount: Int? // Bitcoin reward in sats
+    
+    // Additional computed properties
+    var locations: [CLLocationCoordinate2D] {
+        return route ?? []
+    }
+    
+    var splits: [WorkoutSplit] {
+        // Generate splits based on distance (1km splits)
+        guard distance > 1000 else { return [] }
+        
+        let kmDistance = distance / 1000
+        let splitCount = Int(kmDistance)
+        
+        // Ensure splitCount is valid for range operations
+        guard splitCount > 0 else { return [] }
+        
+        var splits: [WorkoutSplit] = []
+        
+        for i in 0..<splitCount {
+            splits.append(WorkoutSplit(
+                distance: 1000,
+                time: duration / Double(splitCount),
+                pace: averagePace
+            ))
+        }
+        return splits
+    }
+    
+    var mapRegion: MKCoordinateRegion? {
+        guard !locations.isEmpty else { return nil }
+        
+        let latitudes = locations.map { $0.latitude }
+        let longitudes = locations.map { $0.longitude }
+        
+        let minLat = latitudes.min() ?? 0
+        let maxLat = latitudes.max() ?? 0
+        let minLon = longitudes.min() ?? 0
+        let maxLon = longitudes.max() ?? 0
+        
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLon + maxLon) / 2
+        )
+        
+        let span = MKCoordinateSpan(
+            latitudeDelta: (maxLat - minLat) * 1.3,
+            longitudeDelta: (maxLon - minLon) * 1.3
+        )
+        
+        return MKCoordinateRegion(center: center, span: span)
+    }
     
     init(activityType: ActivityType, userID: String) {
         self.id = UUID().uuidString
@@ -41,10 +90,43 @@ struct Workout: Identifiable, Codable {
         self.elevationGain = nil
         self.weather = nil
         self.nostrEventID = nil
-        self.rewardAmount = 0
-        self.isTeamChallenge = false
-        self.teamID = nil
-        self.eventID = nil
+        self.rewardAmount = nil
+    }
+    
+    // Convenience initializer for previews and testing
+    init(activityType: ActivityType, 
+         startTime: Date, 
+         endTime: Date, 
+         distance: Double, 
+         calories: Double? = nil, 
+         averageHeartRate: Double? = nil, 
+         maxHeartRate: Double? = nil,
+         elevationGain: Double? = nil,
+         steps: Int? = nil,
+         locations: [CLLocationCoordinate2D] = []) {
+        
+        self.id = UUID().uuidString
+        self.userID = "preview-user"
+        self.activityType = activityType
+        self.startTime = startTime
+        self.endTime = endTime
+        self.duration = endTime.timeIntervalSince(startTime)
+        self.distance = distance
+        
+        // Calculate average pace (min/km)
+        let hours = self.duration / 3600
+        let kmDistance = distance / 1000
+        self.averagePace = kmDistance > 0 ? (hours * 60) / kmDistance : 0
+        
+        self.calories = calories
+        self.averageHeartRate = averageHeartRate
+        self.maxHeartRate = maxHeartRate
+        self.steps = steps
+        self.route = locations.isEmpty ? nil : locations
+        self.elevationGain = elevationGain
+        self.weather = nil
+        self.nostrEventID = nil
+        self.rewardAmount = nil
     }
     
     var pace: String {
@@ -72,8 +154,7 @@ struct Workout: Identifiable, Codable {
     // MARK: - Codable
     private enum CodingKeys: String, CodingKey {
         case id, userID, activityType, startTime, endTime, duration, distance, averagePace, calories
-        case averageHeartRate, maxHeartRate, elevationGain, weather, nostrEventID, rewardAmount
-        case isTeamChallenge, teamID, eventID, route
+        case averageHeartRate, maxHeartRate, elevationGain, weather, nostrEventID, route, steps, rewardAmount
     }
     
     init(from decoder: Decoder) throws {
@@ -89,13 +170,11 @@ struct Workout: Identifiable, Codable {
         calories = try container.decodeIfPresent(Double.self, forKey: .calories)
         averageHeartRate = try container.decodeIfPresent(Double.self, forKey: .averageHeartRate)
         maxHeartRate = try container.decodeIfPresent(Double.self, forKey: .maxHeartRate)
+        steps = try container.decodeIfPresent(Int.self, forKey: .steps)
         elevationGain = try container.decodeIfPresent(Double.self, forKey: .elevationGain)
         weather = try container.decodeIfPresent(WeatherCondition.self, forKey: .weather)
         nostrEventID = try container.decodeIfPresent(String.self, forKey: .nostrEventID)
-        rewardAmount = try container.decode(Int.self, forKey: .rewardAmount)
-        isTeamChallenge = try container.decode(Bool.self, forKey: .isTeamChallenge)
-        teamID = try container.decodeIfPresent(String.self, forKey: .teamID)
-        eventID = try container.decodeIfPresent(String.self, forKey: .eventID)
+        rewardAmount = try container.decodeIfPresent(Int.self, forKey: .rewardAmount)
         
         // Decode route as array of coordinate dictionaries
         if let routeData = try container.decodeIfPresent([[String: Double]].self, forKey: .route) {
@@ -121,13 +200,10 @@ struct Workout: Identifiable, Codable {
         try container.encodeIfPresent(calories, forKey: .calories)
         try container.encodeIfPresent(averageHeartRate, forKey: .averageHeartRate)
         try container.encodeIfPresent(maxHeartRate, forKey: .maxHeartRate)
+        try container.encodeIfPresent(steps, forKey: .steps)
         try container.encodeIfPresent(elevationGain, forKey: .elevationGain)
         try container.encodeIfPresent(weather, forKey: .weather)
         try container.encodeIfPresent(nostrEventID, forKey: .nostrEventID)
-        try container.encode(rewardAmount, forKey: .rewardAmount)
-        try container.encode(isTeamChallenge, forKey: .isTeamChallenge)
-        try container.encodeIfPresent(teamID, forKey: .teamID)
-        try container.encodeIfPresent(eventID, forKey: .eventID)
         
         // Encode route as array of coordinate dictionaries
         if let route = route {
@@ -146,6 +222,12 @@ struct WeatherCondition: Codable {
     let condition: String
     let humidity: Double
     let windSpeed: Double
+}
+
+struct WorkoutSplit: Codable {
+    let distance: Double // meters
+    let time: TimeInterval // seconds for this split
+    let pace: Double // minutes per km
 }
 
 class WorkoutSession: ObservableObject {
@@ -283,9 +365,9 @@ class WorkoutSession: ObservableObject {
             workout.duration = elapsedTime
             workout.distance = currentDistance
             workout.averagePace = calculateAveragePace()
-            workout.rewardAmount = calculateReward()
             workout.calories = currentCalories
             workout.steps = currentSteps
+            workout.averageHeartRate = currentHeartRate
             workout.route = locations.map { $0.coordinate }
             workout.elevationGain = calculateElevationGain()
             workout.endTime = Date()
@@ -306,18 +388,29 @@ class WorkoutSession: ObservableObject {
         
         // Sync data from services
         if let locationService = locationService {
+            let oldDistance = currentDistance
             currentDistance = locationService.totalDistance
             currentPace = locationService.currentPace
             currentSpeed = locationService.currentSpeed
             locations = locationService.route
             isGPSReady = locationService.isGPSReady
             accuracy = locationService.accuracy
+            
+            // Log significant changes
+            if abs(currentDistance - oldDistance) > 10 { // 10+ meters change
+                print("🏃 Distance updated: \(String(format: "%.0f", currentDistance))m, Pace: \(String(format: "%.1f", currentPace)) min/km")
+            }
         }
         
         if let healthKitService = healthKitService {
             currentHeartRate = healthKitService.currentHeartRate
             currentCalories = healthKitService.currentCalories
             currentSteps = healthKitService.currentSteps
+            
+            // Log heart rate updates
+            if let hr = currentHeartRate {
+                print("❤️ Heart Rate: \(Int(hr)) bpm, Calories: \(String(format: "%.0f", currentCalories)), Steps: \(currentSteps)")
+            }
         }
     }
     
@@ -326,18 +419,16 @@ class WorkoutSession: ObservableObject {
         return (elapsedTime / 60) / (currentDistance / 1000) // minutes per km
     }
     
-    private func calculateReward() -> Int {
-        let baseReward = Int(currentDistance / 100) // 1 sat per 100m
-        let timeBonus = Int(elapsedTime / 300) // 1 sat per 5 minutes
-        let heartRateBonus = currentHeartRate != nil ? 50 : 0 // bonus for heart rate data
-        return max(100, baseReward + timeBonus + heartRateBonus) // minimum 100 sats
-    }
     
     private func calculateElevationGain() -> Double {
         guard locations.count > 1 else { return 0.0 }
         
         var elevationGain: Double = 0.0
-        for i in 1..<locations.count {
+        // Ensure we have at least 2 locations before creating range
+        let locationCount = locations.count
+        guard locationCount >= 2 else { return 0.0 }
+        
+        for i in 1..<locationCount {
             let altitudeDifference = locations[i].altitude - locations[i-1].altitude
             if altitudeDifference > 0 {
                 elevationGain += altitudeDifference

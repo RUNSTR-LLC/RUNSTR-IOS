@@ -23,13 +23,6 @@ class WorkoutStorage: ObservableObject {
         print("✅ Workout saved locally: \(workout.distanceFormatted), \(workout.durationFormatted)")
     }
     
-    /// Get all workouts for a specific timeframe
-    func getWorkouts(for timeframe: TimeFrame) -> [Workout] {
-        let dateRange = timeframe.dateRange
-        return workouts.filter { workout in
-            workout.startTime >= dateRange.start && workout.startTime <= dateRange.end
-        }
-    }
     
     /// Get workouts for a specific activity type
     func getWorkouts(for activityType: ActivityType) -> [Workout] {
@@ -62,7 +55,7 @@ class WorkoutStorage: ObservableObject {
         let totalDistance = workouts.reduce(0.0) { $0 + $1.distance }
         let totalDuration = workouts.reduce(0.0) { $0 + $1.duration }
         let totalCalories = workouts.compactMap { $0.calories }.reduce(0.0, +)
-        let totalRewards = workouts.reduce(0) { $0 + $1.rewardAmount }
+        let totalRewards = 0 // Rewards removed in simplification
         
         return WorkoutTotalStats(
             totalWorkouts: workouts.count,
@@ -87,7 +80,7 @@ class WorkoutStorage: ObservableObject {
                 longestDuration: typeWorkouts.max { $0.duration < $1.duration },
                 fastestPace: typeWorkouts.min { $0.averagePace < $1.averagePace },
                 mostCalories: typeWorkouts.max { ($0.calories ?? 0) < ($1.calories ?? 0) },
-                highestReward: typeWorkouts.max { $0.rewardAmount < $1.rewardAmount }
+                highestReward: nil
             )
         }
         
