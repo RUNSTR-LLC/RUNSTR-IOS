@@ -135,7 +135,7 @@ struct DashboardView: View {
                     .foregroundColor(.runstrGray)
             }
             .padding(RunstrSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 85, alignment: .leading)
             .runstrCard()
             
             // Time card
@@ -154,7 +154,7 @@ struct DashboardView: View {
                     .foregroundColor(.runstrWhite)
             }
             .padding(RunstrSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 85, alignment: .leading)
             .runstrCard()
             
             // Activity-specific metric card
@@ -210,7 +210,7 @@ struct DashboardView: View {
                 }
             }
             .padding(RunstrSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 85, alignment: .leading)
             .runstrCard()
             
             // Elevation card with directional indicators
@@ -274,7 +274,7 @@ struct DashboardView: View {
                 }
             }
             .padding(RunstrSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 85, alignment: .leading)
             .runstrCard()
         }
     }
