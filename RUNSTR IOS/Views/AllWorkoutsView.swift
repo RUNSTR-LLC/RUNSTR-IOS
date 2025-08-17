@@ -62,11 +62,6 @@ struct AllWorkoutsView: View {
                     .foregroundColor(.runstrWhite)
                 
                 Spacer()
-                
-                // Invisible spacer for centering
-                Image(systemName: "chevron.left")
-                    .font(.title2)
-                    .foregroundColor(.clear)
             }
             
             // Filter chips

@@ -15,41 +15,39 @@ struct WorkoutDetailView: View {
     @State private var publishRecordSuccess = false
     
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: RunstrSpacing.lg) {
-                    // Header with activity type and date
-                    headerSection
-                    
-                    // Main metrics grid
-                    metricsGrid
-                    
-                    // Map view if GPS data available
-                    if !workout.locations.isEmpty {
-                        mapSection
-                    }
-                    
-                    // Pace chart
-                    if workout.splits.count > 1 {
-                        paceChartSection
-                    }
-                    
-                    // Heart rate data if available
-                    if let avgHR = workout.averageHeartRate {
-                        heartRateSection(avgHR: avgHR)
-                    }
-                    
-                    // Share/Export options
-                    shareSection
-                    
-                    Spacer(minLength: 50)
+        ScrollView {
+            VStack(spacing: RunstrSpacing.lg) {
+                // Header with activity type and date
+                headerSection
+                
+                // Main metrics grid
+                metricsGrid
+                
+                // Map view if GPS data available
+                if !workout.locations.isEmpty {
+                    mapSection
                 }
-                .padding(.horizontal, RunstrSpacing.md)
-                .padding(.top, RunstrSpacing.md)
+                
+                // Pace chart
+                if workout.splits.count > 1 {
+                    paceChartSection
+                }
+                
+                // Heart rate data if available
+                if let avgHR = workout.averageHeartRate {
+                    heartRateSection(avgHR: avgHR)
+                }
+                
+                // Share/Export options
+                shareSection
+                
+                Spacer(minLength: 50)
             }
-            .background(Color.runstrBackground)
-            .navigationBarHidden(true)
+            .padding(.horizontal, RunstrSpacing.md)
+            .padding(.top, RunstrSpacing.md)
         }
+        .background(Color.runstrBackground)
+        .navigationBarHidden(true)
         .sheet(isPresented: $showShareOptions) {
             ShareOptionsView(workout: workout)
         }
