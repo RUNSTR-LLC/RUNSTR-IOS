@@ -55,6 +55,7 @@ struct User: Codable, Identifiable {
 
 enum LoginMethod: String, Codable {
     case apple
+    case nostr
 }
 
 struct NostrProfile: Codable {
