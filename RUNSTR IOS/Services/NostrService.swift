@@ -2,7 +2,8 @@ import Foundation
 import Combine
 import NostrSDK
 
-/// Simplified Nostr service for RUNSTR - minimal implementation
+
+/// Real Nostr service for RUNSTR using NostrSDK 0.3.0
 @MainActor
 class NostrService: ObservableObject {
     
@@ -12,6 +13,7 @@ class NostrService: ObservableObject {
     @Published var errorMessage: String?
     
     // MARK: - Private Properties
+    private var keypair: Keypair?
     private var relayPool: RelayPool?
     private let relayUrls = [
         "wss://relay.damus.io",
@@ -22,18 +24,37 @@ class NostrService: ObservableObject {
     
     // MARK: - Initialization
     init() {
+        print("📱 NostrService initialized with NostrSDK 0.3.0")
         loadStoredKeys()
-        // Auto-connect on init
-        Task {
-            await connect()
-        }
+    }
+    
+    // MARK: - SDK Setup
+    private func ensureRelayPoolSetup() async {
+        guard relayPool == nil else { return }
+        
+        let relays = Set(relayUrls.compactMap { URL(string: $0) }.compactMap { 
+            try? Relay(url: $0) 
+        })
+        relayPool = RelayPool(relays: relays)
+        print("✅ RelayPool initialized with \(relays.count) relays")
     }
     
     // MARK: - Key Management
     
-    /// Generate new Nostr key pair for RUNSTR identity
-    func generateRunstrKeys() -> NostrKeyPair {
-        return NostrKeyPair.generate()
+    /// Generate new Nostr key pair using NostrSDK
+    func generateRunstrKeys() -> NostrKeyPair? {
+        guard let keypair = Keypair() else {
+            print("❌ Failed to generate Nostr keypair")
+            return nil
+        }
+        
+        let nostrKeyPair = NostrKeyPair(
+            privateKey: keypair.privateKey.nsec,
+            publicKey: keypair.publicKey.npub
+        )
+        
+        self.keypair = keypair
+        return nostrKeyPair
     }
     
     /// Store key pair securely in iOS Keychain
@@ -85,55 +106,27 @@ class NostrService: ObservableObject {
         }
     }
     
-    // MARK: - Connection Management (Simplified)
+    // MARK: - Connection Management (Lightweight)
     
-    /// Connect to actual Nostr relays
+    /// Connect to Nostr relays using NostrSDK
     func connect() async {
-        do {
-            // Create relay connections
-            var relays = Set<Relay>()
-            
-            for urlString in relayUrls {
-                if let url = URL(string: urlString) {
-                    do {
-                        let relay = try Relay(url: url)
-                        relays.insert(relay)
-                    } catch {
-                        print("Failed to create relay for \(url): \(error)")
-                    }
-                }
-            }
-            
-            guard !relays.isEmpty else {
-                await MainActor.run {
-                    errorMessage = "Failed to create relay connections"
-                }
-                return
-            }
-            
-            relayPool = RelayPool(relays: relays)
-            
-            // Attempt to connect
-            relayPool?.connect()
-            
-            await MainActor.run {
-                isConnected = true
-                print("✅ Connected to Nostr relays")
-            }
-        } catch {
-            await MainActor.run {
-                isConnected = false
-                errorMessage = "Failed to connect to relays: \(error.localizedDescription)"
-                print("❌ Failed to connect to Nostr relays: \(error)")
-            }
+        await ensureRelayPoolSetup()
+        
+        guard let relayPool = relayPool else {
+            errorMessage = "RelayPool not initialized"
+            return
+        }
+        
+        relayPool.connect()
+        await MainActor.run {
+            isConnected = true
+            print("✅ Connected to Nostr relays")
         }
     }
     
     /// Disconnect from relays
     func disconnect() async {
         relayPool?.disconnect()
-        relayPool = nil
-        
         await MainActor.run {
             isConnected = false
             print("✅ Disconnected from Nostr relays")
@@ -146,83 +139,252 @@ class NostrService: ObservableObject {
     func publishWorkoutEvent(_ workout: Workout) async -> Bool {
         // For now, we'll publish workout events as kind 1 text notes
         // In the future, we can implement proper kind 1301 support
-        let workoutContent = """
-        🏃‍♂️ Workout Complete!
-        Activity: \(workout.activityType.displayName)
-        Distance: \(workout.distanceFormatted)
-        Duration: \(workout.durationFormatted)
-        Date: \(workout.startTime.formatted(.dateTime.month().day().hour().minute()))
         
-        #RUNSTR #Fitness #\(workout.activityType.rawValue) #Bitcoin
+        // Build the workout content with emojis and proper formatting
+        let activityText: String
+        switch workout.activityType {
+        case .running:
+            activityText = "run"
+        case .cycling:
+            activityText = "ride"
+        case .walking:
+            activityText = "walk"
+        }
+        
+        var workoutContent = "Just completed a \(activityText) with RUNSTR! "
+        
+        // Add activity-specific emoji
+        switch workout.activityType {
+        case .running:
+            workoutContent += "🏃‍♂️💨"
+        case .cycling:
+            workoutContent += "🚴‍♂️💨"
+        case .walking:
+            workoutContent += "🚶‍♂️💨"
+        }
+        
+        workoutContent += """
+        
+        
+        ⏱️ Duration: \(workout.durationFormatted)
+        📏 Distance: \(workout.distanceFormatted)
         """
+        
+        // Add activity-specific metrics
+        switch workout.activityType {
+        case .running:
+            workoutContent += "\n⚡ Pace: \(workout.pace)"
+        case .cycling:
+            // Calculate and show speed for cycling
+            let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
+            let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+            if useMetric {
+                workoutContent += "\n🚴‍♂️ Speed: \(String(format: "%.1f", speedKmh)) km/h"
+            } else {
+                let speedMph = speedKmh * 0.621371
+                workoutContent += "\n🚴‍♂️ Speed: \(String(format: "%.1f", speedMph)) mph"
+            }
+        case .walking:
+            // Show steps for walking if available, otherwise show pace
+            if let steps = workout.steps, steps > 0 {
+                workoutContent += "\n👣 Steps: \(steps)"
+            } else {
+                workoutContent += "\n⚡ Pace: \(workout.pace)"
+            }
+        }
+        
+        // Add calories if available
+        if let calories = workout.calories {
+            workoutContent += "\n🔥 Calories: \(Int(calories)) kcal"
+        }
+        
+        // Add elevation data if available
+        if let elevationGain = workout.elevationGain, elevationGain > 0 {
+            workoutContent += "\n\n🏔️ Elevation Gain: \(Int(elevationGain)) m"
+        }
+        
+        workoutContent += "\n#RUNSTR #\(workout.activityType.displayName)"
         
         return await publishTextNote(workoutContent)
     }
     
-    /// Publish Kind 1 text note to actual Nostr relays
-    func publishTextNote(_ content: String) async -> Bool {
-        // Ensure we have keys
+    /// Publish Kind 1301 workout record using NostrSDK
+    /// Note: This function is currently disabled due to API compatibility issues
+    func publishWorkoutRecord(_ workout: Workout) async -> Bool {
+        // TODO: Implement Kind 1301 workout records when NostrSDK API is stable
+        print("⚠️ Kind 1301 workout records are not currently supported")
+        return false
+    }
+    
+    /// Ensure keys are loaded from keychain if not already loaded
+    private func ensureKeysLoaded() {
         if userKeyPair == nil {
-            userKeyPair = generateRunstrKeys()
-            storeKeyPair(userKeyPair!)
+            loadStoredKeys()
         }
+    }
+    
+    /// Publish Kind 1 text note using NostrSDK
+    func publishTextNote(_ content: String) async -> Bool {
+        await ensureRelayPoolSetup()
         
-        guard let keyPair = userKeyPair else {
-            print("❌ Cannot publish text note: no keys available")
-            await MainActor.run {
-                errorMessage = "No keys available for publishing"
+        // Ensure we have keys loaded
+        ensureKeysLoaded()
+        
+        // Generate new keys if none exist
+        if userKeyPair == nil {
+            guard let newKeyPair = generateRunstrKeys() else {
+                print("❌ Failed to generate new Nostr keys")
+                return false
             }
-            return false
+            userKeyPair = newKeyPair
+            storeKeyPair(newKeyPair)
         }
         
-        // Ensure we're connected to relays
-        if !isConnected {
-            await connect()
+        // Ensure keypair is loaded for signing
+        if keypair == nil {
+            keypair = Keypair(nsec: userKeyPair!.privateKey)
         }
         
-        guard isConnected, let relayPool = relayPool else {
-            print("❌ Cannot publish: not connected to relays")
-            await MainActor.run {
-                errorMessage = "Not connected to Nostr relays"
-            }
+        guard let keypair = keypair,
+              let relayPool = relayPool else {
+            print("❌ Missing keypair or relay pool")
             return false
         }
         
         do {
-            // Convert stored keys to NostrSDK format
-            guard let keypair = Keypair(nsec: keyPair.privateKey) else {
-                await MainActor.run {
-                    errorMessage = "Failed to create keypair from stored keys"
-                }
-                return false
-            }
-            
-            // Create the text note event
+            // Create kind 1 text note event using Builder pattern
             let builder = NostrEvent.Builder<NostrEvent>(kind: EventKind.textNote)
                 .content(content)
             
             let signedEvent = try builder.build(signedBy: keypair)
             
-            print("📝 Publishing text note...")
-            print("Content: \(content)")
-            print("Using npub: \(keyPair.publicKey)")
-            print("Event ID: \(signedEvent.id)")
-            
             // Publish to relays
-            try relayPool.publishEvent(signedEvent)
+            relayPool.publishEvent(signedEvent)
             
             await MainActor.run {
-                print("✅ Text note published to Nostr relays")
+                print("✅ Kind 1 text note published to Nostr relays")
+                print("Content: \(content)")
+                print("Event ID: \(signedEvent.id)")
+                print("Using npub: \(userKeyPair?.publicKey ?? "unknown")")
             }
             
             return true
             
         } catch {
-            print("❌ Failed to publish text note: \(error)")
             await MainActor.run {
                 errorMessage = "Failed to publish note: \(error.localizedDescription)"
+                print("❌ Failed to publish text note: \(error)")
             }
             return false
         }
+    }
+    
+    // MARK: - Profile Management (NIP-01)
+    
+    /// Publish user profile metadata as Kind 0 event
+    func publishProfile(name: String, about: String? = nil, picture: String? = nil) async -> Bool {
+        await ensureRelayPoolSetup()
+        
+        // Ensure we have keys loaded
+        ensureKeysLoaded()
+        
+        // Generate new keys if none exist
+        if userKeyPair == nil {
+            guard let newKeyPair = generateRunstrKeys() else {
+                print("❌ Failed to generate new Nostr keys")
+                return false
+            }
+            userKeyPair = newKeyPair
+            storeKeyPair(newKeyPair)
+        }
+        
+        // Ensure keypair is loaded for signing
+        if keypair == nil {
+            keypair = Keypair(nsec: userKeyPair!.privateKey)
+        }
+        
+        guard let keypair = keypair,
+              let relayPool = relayPool else {
+            print("❌ Missing keypair or relay pool")
+            return false
+        }
+        
+        // Create profile metadata JSON
+        var profileData: [String: Any] = [
+            "name": name
+        ]
+        
+        if let about = about, !about.isEmpty {
+            profileData["about"] = about
+        }
+        
+        if let picture = picture, !picture.isEmpty {
+            profileData["picture"] = picture
+        }
+        
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: profileData)
+            let profileContent = String(data: jsonData, encoding: .utf8) ?? "{}"
+            
+            // Create kind 0 profile event using Builder pattern
+            let builder = NostrEvent.Builder<NostrEvent>(kind: EventKind(rawValue: 0))
+                .content(profileContent)
+            
+            let signedEvent = try builder.build(signedBy: keypair)
+            
+            // Publish to relays
+            relayPool.publishEvent(signedEvent)
+            
+            await MainActor.run {
+                print("✅ Profile published to Nostr relays")
+                print("Profile data: \(profileContent)")
+                print("Event ID: \(signedEvent.id)")
+            }
+            
+            return true
+            
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to publish profile: \(error.localizedDescription)"
+                print("❌ Failed to publish profile: \(error)")
+            }
+            return false
+        }
+    }
+    
+    /// Fetch profile metadata from Nostr relays
+    func fetchProfile(pubkey: String) async -> NostrProfile? {
+        await ensureRelayPoolSetup()
+        
+        guard relayPool != nil else {
+            print("❌ RelayPool not initialized")
+            return nil
+        }
+        
+        // Create filter for profile events (kind 0) for specific pubkey
+        _ = Filter(
+            authors: [pubkey],
+            kinds: [0],
+            limit: 1
+        )
+        
+        // Note: This is a simplified implementation
+        // In a full implementation, you would subscribe to events and handle responses
+        print("🔍 Profile fetch initiated for pubkey: \(pubkey)")
+        
+        // For now, return nil as this requires implementing subscription handling
+        // which would need additional relay event handling infrastructure
+        return nil
+    }
+    
+    /// Update local user profile and publish to Nostr
+    func updateUserProfile(name: String, about: String? = nil, picture: String? = nil) async -> Bool {
+        // First update locally stored profile
+        await MainActor.run {
+            // This will be handled by the User model update methods
+        }
+        
+        // Then publish to Nostr relays
+        return await publishProfile(name: name, about: about, picture: picture)
     }
 }

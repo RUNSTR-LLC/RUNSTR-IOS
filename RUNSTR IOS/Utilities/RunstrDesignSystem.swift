@@ -1,22 +1,29 @@
 import SwiftUI
 
-// RUNSTR Design System - matching main project
+// RUNSTR Design System - Black & White Minimalistic Theme
 extension Color {
-    // Primary colors from main RUNSTR project
-    static let runstrBackground = Color(hex: "#242424")
-    static let runstrCardBackground = Color(hex: "#2a2a2a")
-    static let runstrDark = Color(hex: "#1a1a1a")
-    static let runstrAccent = Color(hex: "#646cff")
-    static let runstrOrange = Color(hex: "#FF6B35")
+    // Core black and white colors
+    static let runstrBlack = Color.black
     static let runstrWhite = Color.white
-    static let runstrGray = Color(hex: "#9ca3af")
-    static let runstrGrayLight = Color(hex: "#6b7280")
-    static let runstrGrayDark = Color(hex: "#374151")
     
-    // Activity type colors
+    // Gray shades for hierarchy and depth
+    static let runstrGray = Color(white: 0.5)        // Medium gray (#808080)
+    static let runstrGrayLight = Color(white: 0.88)  // Light gray (#E0E0E0)
+    static let runstrGrayDark = Color(white: 0.25)   // Dark gray (#404040)
+    
+    // Background colors
+    static let runstrBackground = Color.black
+    static let runstrCardBackground = Color(white: 0.08) // Very dark gray for cards
+    static let runstrDark = Color.black
+    
+    // Legacy mappings for compatibility
+    static let runstrAccent = Color.white  // Previously blue/purple
+    static let runstrOrange = Color.white  // Previously orange
+    
+    // Activity type colors - all monochrome
     static let runstrRunning = Color.white
-    static let runstrWalking = Color(hex: "#646cff")
-    static let runstrCycling = Color(hex: "#646cff")
+    static let runstrWalking = Color(white: 0.9)  // Slightly dimmed white
+    static let runstrCycling = Color(white: 0.85) // More dimmed white
     
     // Initialize color from hex string
     init(hex: String) {

@@ -8,9 +8,11 @@ struct MainTabView: View {
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var workoutStorage: WorkoutStorage
     
+    @State private var selectedTab = 0
+    
     var body: some View {
-        TabView {
-            // Activity Tab
+        TabView(selection: $selectedTab) {
+            // Activity Tab - always loaded (default tab)
             DashboardView()
                 .tabItem {
                     Image(systemName: "figure.run")
@@ -18,13 +20,19 @@ struct MainTabView: View {
                 }
                 .tag(0)
             
-            // Profile Tab
-            ProfileView()
-                .tabItem {
-                    Image(systemName: "person.fill")
-                    Text("PROFILE")
+            // Profile Tab - only load when selected to prevent startup delay
+            Group {
+                if selectedTab == 1 {
+                    ProfileView()
+                } else {
+                    Color.runstrBackground // Placeholder to prevent loading
                 }
-                .tag(1)
+            }
+            .tabItem {
+                Image(systemName: "person.fill")
+                Text("PROFILE")
+            }
+            .tag(1)
         }
         .accentColor(.runstrWhite)
         .background(Color.runstrBackground)

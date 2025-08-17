@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AllWorkoutsView: View {
     @EnvironmentObject var workoutStorage: WorkoutStorage
+    @EnvironmentObject var unitPreferences: UnitPreferencesService
     @Environment(\.dismiss) private var dismiss
     
     @State private var selectedFilter: ActivityType? = nil
@@ -154,7 +155,7 @@ struct AllWorkoutsView: View {
                     NavigationLink {
                         WorkoutDetailView(workout: workout)
                     } label: {
-                        WorkoutRowView(workout: workout)
+                        WorkoutRowView(workout: workout, unitPreferences: unitPreferences)
                             .padding(.horizontal, RunstrSpacing.md)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -183,7 +184,7 @@ struct FilterChip: View {
                 .foregroundColor(isSelected ? .black : .runstrWhite)
                 .padding(.horizontal, RunstrSpacing.md)
                 .padding(.vertical, RunstrSpacing.sm)
-                .background(isSelected ? Color.orange : Color.runstrGray.opacity(0.2))
+                .background(isSelected ? Color.white : Color.runstrGray.opacity(0.2))
                 .cornerRadius(RunstrRadius.sm)
         }
     }

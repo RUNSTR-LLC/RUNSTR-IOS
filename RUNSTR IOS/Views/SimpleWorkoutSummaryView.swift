@@ -14,7 +14,7 @@ struct SimpleWorkoutSummaryView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 60))
-                        .foregroundColor(.green)
+                        .foregroundColor(.white)
                     
                     Text("Workout Complete!")
                         .font(.largeTitle)
@@ -44,11 +44,35 @@ struct SimpleWorkoutSummaryView: View {
                     }
                     
                     HStack(spacing: 20) {
-                        StatBox(
-                            title: "Pace",
-                            value: workout.pace,
-                            icon: "speedometer"
-                        )
+                        // Activity-specific metric
+                        switch workout.activityType {
+                        case .running:
+                            StatBox(
+                                title: "Pace",
+                                value: workout.pace,
+                                icon: "speedometer"
+                            )
+                        case .cycling:
+                            StatBox(
+                                title: "Speed",
+                                value: formatSpeed(),
+                                icon: "speedometer"
+                            )
+                        case .walking:
+                            if let steps = workout.steps, steps > 0 {
+                                StatBox(
+                                    title: "Steps",
+                                    value: "\(steps)",
+                                    icon: "figure.walk"
+                                )
+                            } else {
+                                StatBox(
+                                    title: "Pace",
+                                    value: workout.pace,
+                                    icon: "speedometer"
+                                )
+                            }
+                        }
                         
                         if let calories = workout.calories {
                             StatBox(
@@ -84,6 +108,19 @@ struct SimpleWorkoutSummaryView: View {
             // Save workout to local storage
             workoutStorage.saveWorkout(workout)
             print("✅ Workout saved in summary view")
+        }
+    }
+    
+    private func formatSpeed() -> String {
+        // Calculate speed from distance and duration
+        let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        
+        if useMetric {
+            return String(format: "%.1f km/h", speedKmh)
+        } else {
+            let speedMph = speedKmh * 0.621371
+            return String(format: "%.1f mph", speedMph)
         }
     }
 }

@@ -12,7 +12,8 @@ class AuthenticationService: NSObject, ObservableObject {
     
     override init() {
         super.init()
-        checkAuthenticationStatus()
+        // Don't check authentication status during init to avoid blocking app startup
+        // It will be checked when the ContentView appears
     }
     
     func signInWithApple() {
@@ -38,13 +39,82 @@ class AuthenticationService: NSObject, ObservableObject {
     
     
     
+    func importNostrKey(_ nsec: String) async -> Bool {
+        do {
+            // Create key pair from nsec using NostrSDK
+            guard let nostrSDKKeypair = Keypair(nsec: nsec) else {
+                throw NSError(domain: "NostrKeyError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid nsec format"])
+            }
+            
+            let keyPair = NostrKeyPair(
+                privateKey: nostrSDKKeypair.privateKey.nsec,
+                publicKey: nostrSDKKeypair.publicKey.npub
+            )
+            
+            // Update current user with new keys
+            guard var user = currentUser else { return false }
+            user = User(
+                appleUserID: user.appleUserID,
+                email: user.email,
+                nostrPublicKey: keyPair.publicKey,
+                nostrPrivateKey: keyPair.privateKey
+            )
+            
+            // Save updated user
+            saveUserToKeychain(user)
+            
+            // Update published properties on main thread
+            let userToSet = user
+            await MainActor.run {
+                currentUser = userToSet
+            }
+            
+            print("✅ Successfully imported Nostr keys")
+            print("   📁 Public key: \(keyPair.publicKey)")
+            print("   🔐 Private key: [REDACTED]")
+            
+            return true
+            
+        } catch {
+            print("❌ Failed to import Nostr keys: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
+    func updateUserProfile(displayName: String, about: String, profilePicture: String?) async -> Bool {
+        guard var user = currentUser else { return false }
+        
+        // Update user profile
+        user.profile.updateProfile(
+            displayName: displayName,
+            about: about,
+            profilePicture: profilePicture
+        )
+        
+        // Save updated user to keychain
+        saveUserToKeychain(user)
+        
+        // Update published properties on main thread
+        let userToSet = user
+        await MainActor.run {
+            currentUser = userToSet
+        }
+        
+        print("✅ User profile updated successfully")
+        print("   📝 Display name: \(displayName)")
+        print("   📋 About: \(about)")
+        print("   🖼️ Profile picture: \(profilePicture ?? "none")")
+        
+        return true
+    }
+    
     func signOut() {
         currentUser = nil
         isAuthenticated = false
         clearUserDataFromKeychain()
     }
     
-    private func checkAuthenticationStatus() {
+    func checkAuthenticationStatus() {
         if let userData = getUserDataFromKeychain() {
             currentUser = userData
             isAuthenticated = true
@@ -96,34 +166,6 @@ class AuthenticationService: NSObject, ObservableObject {
         SecItemDelete(query as CFDictionary)
     }
     
-    
-    // MARK: - Keychain Methods (for Apple login)
-    
-    private func saveNostrKeysToKeychain(_ keyPair: NostrKeyPair) {
-        let privateKeyData = keyPair.privateKey.data(using: .utf8)!
-        let publicKeyData = keyPair.publicKey.data(using: .utf8)!
-        
-        let privateKeyQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: "nostrPrivateKey",
-            kSecValueData as String: privateKeyData,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-        
-        let publicKeyQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: "nostrPublicKey",
-            kSecValueData as String: publicKeyData
-        ]
-        
-        SecItemDelete(privateKeyQuery as CFDictionary)
-        SecItemDelete(publicKeyQuery as CFDictionary)
-        
-        SecItemAdd(privateKeyQuery as CFDictionary, nil)
-        SecItemAdd(publicKeyQuery as CFDictionary, nil)
-    }
 }
 
 extension AuthenticationService: ASAuthorizationControllerPresentationContextProviding {
@@ -150,16 +192,11 @@ extension AuthenticationService: ASAuthorizationControllerDelegate {
         
         print("✅ Apple ID credential obtained for user: \(appleIDCredential.user)")
         
-        let nostrKeys = NostrKeyPair.generate()
-        print("✅ Nostr keys generated")
-        
-        saveNostrKeysToKeychain(nostrKeys)
-        print("✅ Nostr keys saved to keychain")
-        
+        // Create user without Nostr keys to prevent startup delay
+        // Nostr keys will be generated later when needed
         let user = User(
             appleUserID: appleIDCredential.user,
-            email: appleIDCredential.email,
-            nostrKeys: nostrKeys
+            email: appleIDCredential.email
         )
         print("✅ User object created")
         

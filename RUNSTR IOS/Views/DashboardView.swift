@@ -8,16 +8,17 @@ struct DashboardView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var workoutStorage: WorkoutStorage
+    @EnvironmentObject var unitPreferences: UnitPreferencesService
     
     @State private var selectedActivityType: ActivityType = .running
     @State private var showingWorkoutView = false
     @State private var showingSettingsView = false
     @State private var showingSummary = false
     @State private var completedWorkout: Workout?
-    @State private var recentWorkouts: [HKWorkout] = []
+    @State private var recentWorkouts: [Workout] = []
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: RunstrSpacing.lg) {
                     // Header with activity selector and settings
@@ -36,19 +37,13 @@ struct DashboardView: View {
                     
                     Spacer(minLength: 100) // Bottom padding for tab bar
                     
-                    // Hidden NavigationLink for workout summary
-                    NavigationLink(
-                        destination: Group {
-                            if let workout = completedWorkout {
-                                SimpleWorkoutSummaryView(workout: workout)
-                                    .environmentObject(workoutStorage)
-                            }
-                        },
-                        isActive: $showingSummary
-                    ) {
-                        EmptyView()
+                    // Navigation destination for workout summary
+                    .navigationDestination(isPresented: $showingSummary) {
+                        if let workout = completedWorkout {
+                            SimpleWorkoutSummaryView(workout: workout)
+                                .environmentObject(workoutStorage)
+                        }
                     }
-                    .hidden()
                 }
                 .padding(.horizontal, RunstrSpacing.md)
                 .padding(.top, RunstrSpacing.md)
@@ -63,6 +58,10 @@ struct DashboardView: View {
             SettingsView()
         }
         .onAppear {
+            loadRecentWorkouts()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .workoutCompleted)) { _ in
+            // Reload recent workouts when a new workout is completed
             loadRecentWorkouts()
         }
     }
@@ -127,11 +126,11 @@ struct DashboardView: View {
                         .foregroundColor(.runstrGray)
                 }
                 
-                Text(workoutSession.isActive ? String(format: "%.2f", workoutSession.currentDistance / 1000) : "0.00")
+                Text(workoutSession.isActive ? String(format: "%.2f", unitPreferences.convertDistance(workoutSession.currentDistance)) : "0.00")
                     .font(.runstrMetric)
                     .foregroundColor(.runstrWhite)
                 
-                Text("km")
+                Text(unitPreferences.distanceUnit)
                     .font(.runstrSmall)
                     .foregroundColor(.runstrGray)
             }
@@ -186,10 +185,10 @@ struct DashboardView: View {
                             .font(.runstrCaption)
                             .foregroundColor(.runstrGray)
                     }
-                    Text(workoutSession.isActive ? String(format: "%.1f", workoutSession.currentSpeed * 2.23694) : "0.0")
+                    Text(workoutSession.isActive ? String(format: "%.1f", unitPreferences.convertSpeed(workoutSession.currentSpeed)) : "0.0")
                         .font(.runstrMetric)
                         .foregroundColor(.runstrWhite)
-                    Text("mph")
+                    Text(unitPreferences.speedUnit)
                         .font(.runstrSmall)
                         .foregroundColor(.runstrGray)
                         
@@ -202,10 +201,10 @@ struct DashboardView: View {
                             .font(.runstrCaption)
                             .foregroundColor(.runstrGray)
                     }
-                    Text(workoutSession.isActive ? String(format: "%.1f", workoutSession.currentPace) : "--")
+                    Text(workoutSession.isActive ? String(format: "%.1f", unitPreferences.convertPace(workoutSession.currentPace)) : "--")
                         .font(.runstrMetric)
                         .foregroundColor(.runstrWhite)
-                    Text("min/km")
+                    Text(unitPreferences.paceUnit)
                         .font(.runstrSmall)
                         .foregroundColor(.runstrGray)
                 }
@@ -214,10 +213,10 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .runstrCard()
             
-            // Elevation card
+            // Elevation card with directional indicators
             VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
                 HStack {
-                    Image(systemName: "triangle")
+                    Image(systemName: "mountain.2.fill")
                         .font(.runstrCaption)
                         .foregroundColor(.runstrGray)
                     Text("Elevation")
@@ -225,13 +224,54 @@ struct DashboardView: View {
                         .foregroundColor(.runstrGray)
                 }
                 
-                Text(workoutSession.isActive ? String(format: "%.0f", locationService.getElevationGain() * 3.28084) : "0")
-                    .font(.runstrMetric)
-                    .foregroundColor(.runstrWhite)
-                
-                Text("ft")
-                    .font(.runstrSmall)
-                    .foregroundColor(.runstrGray)
+                if workoutSession.isActive {
+                    let elevationData = locationService.getElevationData()
+                    VStack(alignment: .leading, spacing: 4) {
+                        if elevationData.gain > 0 {
+                            HStack(spacing: 4) {
+                                Text("↗")
+                                    .font(.runstrCaption)
+                                    .foregroundColor(.green)
+                                Text(String(format: "%.0f", unitPreferences.convertElevation(elevationData.gain)))
+                                    .font(.runstrBody)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.runstrWhite)
+                                Text(unitPreferences.elevationUnit)
+                                    .font(.runstrSmall)
+                                    .foregroundColor(.runstrGray)
+                            }
+                        }
+                        if elevationData.loss > 0 {
+                            HStack(spacing: 4) {
+                                Text("↘")
+                                    .font(.runstrCaption)
+                                    .foregroundColor(.red)
+                                Text(String(format: "%.0f", unitPreferences.convertElevation(elevationData.loss)))
+                                    .font(.runstrBody)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.runstrWhite)
+                                Text(unitPreferences.elevationUnit)
+                                    .font(.runstrSmall)
+                                    .foregroundColor(.runstrGray)
+                            }
+                        }
+                        if elevationData.gain == 0 && elevationData.loss == 0 {
+                            Text("0")
+                                .font(.runstrMetric)
+                                .foregroundColor(.runstrWhite)
+                            Text(unitPreferences.elevationUnit)
+                                .font(.runstrSmall)
+                                .foregroundColor(.runstrGray)
+                        }
+                    }
+                } else {
+                    Text("0")
+                        .font(.runstrMetric)
+                        .foregroundColor(.runstrWhite)
+                    Text(unitPreferences.elevationUnit)
+                        .font(.runstrSmall)
+                        .foregroundColor(.runstrGray)
+                }
             }
             .padding(RunstrSpacing.lg)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -300,10 +340,11 @@ struct DashboardView: View {
             VStack(spacing: RunstrSpacing.sm) {
                 ForEach(Array(recentWorkouts.prefix(3).enumerated()), id: \.offset) { index, workout in
                     WorkoutSummaryCard(
-                        activityType: ActivityType.from(hkWorkout: workout),
-                        distance: (workout.totalDistance?.doubleValue(for: .meter()) ?? 0) / 1000,
+                        activityType: workout.activityType,
+                        distance: workout.distance,
                         duration: workout.duration,
-                        date: workout.startDate
+                        date: workout.startTime,
+                        unitPreferences: unitPreferences
                     )
                 }
             }
@@ -327,9 +368,7 @@ struct DashboardView: View {
     }
     
     private func loadRecentWorkouts() {
-        healthKitService.fetchRecentWorkouts { workouts in
-            self.recentWorkouts = workouts
-        }
+        recentWorkouts = workoutStorage.getRecentWorkouts(limit: 3)
     }
     
     // MARK: - Workout Control Functions
@@ -414,8 +453,15 @@ struct DashboardView: View {
     
     /// Publish completed workout to Nostr relays
     private func publishWorkoutToNostr(_ workout: Workout) async {
-        guard let user = authService.currentUser else {
+        guard authService.currentUser != nil else {
             print("❌ No authenticated user for Nostr publishing")
+            return
+        }
+        
+        // Check if auto-post is enabled
+        let autoPostEnabled = UserDefaults.standard.object(forKey: "autoPostRunNotes") as? Bool ?? true
+        guard autoPostEnabled else {
+            print("⚠️ Auto-post disabled in settings")
             return
         }
         
@@ -451,9 +497,10 @@ struct DashboardView: View {
 
 struct WorkoutSummaryCard: View {
     let activityType: ActivityType
-    let distance: Double
+    let distance: Double // in meters
     let duration: TimeInterval
     let date: Date
+    let unitPreferences: UnitPreferencesService
     
     private var formatter: DateFormatter {
         let formatter = DateFormatter()
@@ -481,7 +528,7 @@ struct WorkoutSummaryCard: View {
             Spacer()
             
             VStack(alignment: .trailing, spacing: 2) {
-                Text(String(format: "%.1f km", distance))
+                Text(unitPreferences.formatDistance(distance, precision: 1))
                     .font(.runstrBody)
                     .foregroundColor(.runstrWhite)
                 
@@ -529,4 +576,5 @@ extension ActivityType {
         .environmentObject(AuthenticationService())
         .environmentObject(NostrService())
         .environmentObject(WorkoutStorage())
+        .environmentObject(UnitPreferencesService())
 }

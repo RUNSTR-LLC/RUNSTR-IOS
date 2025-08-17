@@ -5,11 +5,14 @@ struct WorkoutDetailView: View {
     let workout: Workout
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var workoutStorage: WorkoutStorage
+    @EnvironmentObject var unitPreferences: UnitPreferencesService
     @Environment(\.dismiss) private var dismiss
     
     @State private var showShareOptions = false
-    @State private var isPublishing = false
-    @State private var publishSuccess = false
+    @State private var isPublishingPost = false
+    @State private var isPublishingRecord = false
+    @State private var publishPostSuccess = false
+    @State private var publishRecordSuccess = false
     
     var body: some View {
         NavigationView {
@@ -50,7 +53,7 @@ struct WorkoutDetailView: View {
         .sheet(isPresented: $showShareOptions) {
             ShareOptionsView(workout: workout)
         }
-        .alert("Published to Nostr", isPresented: $publishSuccess) {
+        .alert("Published to Nostr", isPresented: $publishPostSuccess) {
             Button("OK") { }
         } message: {
             Text("Your workout has been published as a kind 1301 event")
@@ -93,8 +96,8 @@ struct WorkoutDetailView: View {
             MetricCard(
                 icon: "location.fill",
                 title: "Distance",
-                value: workout.distanceFormatted,
-                unit: ""
+                value: String(format: "%.2f", workout.distanceInPreferredUnits(unitService: unitPreferences)),
+                unit: workout.distanceUnit(unitService: unitPreferences)
             )
             
             // Duration
@@ -109,8 +112,8 @@ struct WorkoutDetailView: View {
             MetricCard(
                 icon: "speedometer",
                 title: "Avg Pace",
-                value: String(format: "%.1f", workout.averagePace),
-                unit: "min/km"
+                value: String(format: "%.1f", workout.paceInPreferredUnits(unitService: unitPreferences)),
+                unit: workout.paceUnit(unitService: unitPreferences)
             )
             
             // Calories
@@ -152,9 +155,7 @@ struct WorkoutDetailView: View {
                 .foregroundColor(.runstrWhite)
             
             if let region = workout.mapRegion {
-                Map(coordinateRegion: .constant(region), 
-                    interactionModes: [],
-                    showsUserLocation: false)
+                Map(position: .constant(MapCameraPosition.region(region)))
                 .frame(height: 200)
                 .cornerRadius(RunstrRadius.sm)
                 .allowsHitTesting(false)
@@ -178,7 +179,7 @@ struct WorkoutDetailView: View {
                             let normalizedHeight = 1 - ((split.pace - minPace) / (maxPace - minPace))
                             
                             Rectangle()
-                                .fill(Color.orange)
+                                .fill(Color.white)
                                 .frame(width: 30, height: CGFloat(normalizedHeight) * 100 + 20)
                             
                             Text("\(index + 1)")
@@ -248,7 +249,7 @@ struct WorkoutDetailView: View {
                 .padding(.vertical, RunstrSpacing.md)
             }
             .buttonStyle(RunstrPrimaryButton())
-            .disabled(isPublishing)
+            .disabled(isPublishingPost)
             
             Button {
                 showShareOptions = true
@@ -265,13 +266,13 @@ struct WorkoutDetailView: View {
     }
     
     private func publishToNostr() {
-        isPublishing = true
+        isPublishingPost = true
         Task {
             let success = await nostrService.publishWorkoutEvent(workout)
             await MainActor.run {
-                isPublishing = false
+                isPublishingPost = false
                 if success {
-                    publishSuccess = true
+                    publishPostSuccess = true
                 }
             }
         }

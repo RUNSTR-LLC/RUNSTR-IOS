@@ -65,7 +65,8 @@ struct NostrSettingsView: View {
             
             HStack(spacing: RunstrSpacing.sm) {
                 Circle()
-                    .fill(nostrService.isConnected ? Color.green : Color.red)
+                    .stroke(nostrService.isConnected ? Color.white : Color.gray, lineWidth: 1.5)
+                    .background(Circle().fill(nostrService.isConnected ? Color.white : Color.clear))
                     .frame(width: 12, height: 12)
                 
                 Text(nostrService.isConnected ? "Connected to Nostr relays" : "Disconnected")

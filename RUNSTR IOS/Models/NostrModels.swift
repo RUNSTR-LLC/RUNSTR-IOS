@@ -1,45 +1,30 @@
 import Foundation
-import NostrSDK
+import CryptoKit
 
 // MARK: - Core Nostr Data Models
 
-/// Nostr key pair for RUNSTR app (using bech32 encoded keys)
+/// Nostr key pair for RUNSTR app - simple storage for NostrSDK generated keys
 struct NostrKeyPair: Codable {
     let privateKey: String // nsec (bech32)
     let publicKey: String // npub (bech32)
     
-    /// Generate new key pair using NostrSDK
-    static func generate() -> NostrKeyPair {
-        do {
-            guard let keypair = try Keypair() else {
-                throw NSError(domain: "NostrKeyPair", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create keypair"])
-            }
-            
-            let publicKey = keypair.publicKey.npub
-            let privateKey = keypair.privateKey.nsec
-            
-            return NostrKeyPair(
-                privateKey: privateKey,
-                publicKey: publicKey
-            )
-        } catch {
-            print("❌ Failed to generate Nostr keys: \(error)")
-            
-            do {
-                guard let fallbackKeypair = try Keypair() else {
-                    fatalError("Unable to generate Nostr keys - this is a critical error")
-                }
-                let publicKey = fallbackKeypair.publicKey.npub
-                let privateKey = fallbackKeypair.privateKey.nsec
-                
-                return NostrKeyPair(
-                    privateKey: privateKey,
-                    publicKey: publicKey
-                )
-            } catch {
-                print("❌ Fallback key generation also failed: \(error)")
-                fatalError("Unable to generate Nostr keys - this is a critical error")
-            }
+    /// Initialize from NostrSDK keypair
+    init(privateKey: String, publicKey: String) {
+        self.privateKey = privateKey
+        self.publicKey = publicKey
+    }
+}
+
+enum NostrKeyError: Error, LocalizedError {
+    case invalidFormat
+    case decodingError
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidFormat:
+            return "Invalid nsec format"
+        case .decodingError:
+            return "Failed to decode private key"
         }
     }
 }
@@ -90,7 +75,7 @@ struct NostrRelay {
 /// Kind 33404 - Fitness Team Event
 struct FitnessTeamEvent: Codable {
     let id: String // d tag value
-    let kind: Int = 33404
+    var kind: Int { 33404 }
     let content: String // Team description
     let name: String
     let teamType: String // "running_club", "cycling_group", etc.
@@ -149,7 +134,7 @@ struct FitnessTeamEvent: Codable {
 /// Kind 33403 - Fitness Challenge Event
 struct FitnessChallengeEvent: Codable {
     let id: String // d tag value
-    let kind: Int = 33403
+    let kind: Int
     let content: String // Challenge description
     let name: String
     let startTimestamp: Int64
@@ -177,6 +162,7 @@ struct FitnessChallengeEvent: Codable {
         }
         
         self.id = dTag
+        self.kind = 33403
         self.content = eventContent
         self.name = nameTag
         self.startTimestamp = startTimestamp
@@ -219,7 +205,7 @@ struct FitnessChallengeEvent: Codable {
 /// Kind 33405 - Fitness Event
 struct FitnessEventEvent: Codable {
     let id: String // d tag value
-    let kind: Int = 33405
+    var kind: Int { 33405 }
     let content: String // Event description
     let name: String
     let eventDate: Int64 // Unix timestamp
@@ -304,7 +290,7 @@ struct FitnessEventEvent: Codable {
 /// Enhanced Kind 1301 - Workout Record with Team/Challenge Links
 struct EnhancedWorkoutEvent: Codable {
     let id: String // d tag value
-    let kind: Int = 1301
+    var kind: Int { 1301 }
     let content: String // Workout description/notes
     let title: String
     let workoutType: String // "cardio", "strength", etc.

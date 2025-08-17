@@ -5,9 +5,14 @@ struct ProfileView: View {
     @EnvironmentObject var healthKitService: HealthKitService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var workoutStorage: WorkoutStorage
+    @EnvironmentObject var unitPreferences: UnitPreferencesService
     @State private var showingSettings = false
+    @State private var showingProfileEdit = false
     @State private var isLoading = false
     @State private var selectedActivity: ActivityType = .running
+    @State private var recentWorkouts: [Workout] = []
+    @State private var hasLoadedWorkouts = false
+    @State private var calculatedStats = UserStats()
     
     var body: some View {
         NavigationView {
@@ -20,14 +25,11 @@ struct ProfileView: View {
                         // Profile info section
                         profileInfoSection(user: user)
                         
-                        // Nostr identity section
-                        nostrIdentitySection(user: user)
-                        
                         // Key stats overview cards
-                        keyStatsSection(user: user)
+                        keyStatsSection()
                         
                         // Activity overview
-                        activityOverviewSection(user: user)
+                        activityOverviewSection()
                         
                         // Recent workouts list
                         recentWorkoutsSection
@@ -44,6 +46,100 @@ struct ProfileView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
+        .sheet(isPresented: $showingProfileEdit) {
+            ProfileEditView()
+        }
+        .onAppear {
+            loadWorkouts()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .workoutCompleted)) { _ in
+            // Reload workouts when a new workout is completed
+            loadWorkouts()
+        }
+    }
+    
+    private func loadWorkouts() {
+        recentWorkouts = workoutStorage.getRecentWorkouts(limit: 5)
+        calculateStatsFromWorkouts()
+    }
+    
+    private func calculateStatsFromWorkouts() {
+        let allWorkouts = workoutStorage.getAllWorkouts()
+        
+        var stats = UserStats()
+        stats.totalWorkouts = allWorkouts.count
+        stats.totalDistance = allWorkouts.reduce(0) { $0 + $1.distance }
+        
+        // Find last workout date
+        if let lastWorkout = allWorkouts.first {
+            stats.lastWorkoutDate = lastWorkout.startTime
+        }
+        
+        // Calculate streaks
+        var currentStreak = 0
+        var longestStreak = 0
+        var tempStreak = 0
+        var lastDate: Date? = nil
+        
+        // Sort workouts by date (newest first)
+        let sortedWorkouts = allWorkouts.sorted { $0.startTime > $1.startTime }
+        
+        for workout in sortedWorkouts {
+            let workoutDate = Calendar.current.startOfDay(for: workout.startTime)
+            
+            if let last = lastDate {
+                let daysBetween = Calendar.current.dateComponents([.day], from: workoutDate, to: last).day ?? 0
+                
+                if daysBetween == 1 {
+                    tempStreak += 1
+                } else if daysBetween == 0 {
+                    // Same day, don't increment streak
+                } else {
+                    // Gap in workouts, reset temp streak
+                    longestStreak = max(longestStreak, tempStreak + 1)
+                    tempStreak = 0
+                }
+            } else {
+                // First workout
+                tempStreak = 1
+            }
+            
+            lastDate = workoutDate
+        }
+        
+        // Final check for longest streak
+        longestStreak = max(longestStreak, tempStreak)
+        
+        // Calculate current streak (from today backwards)
+        if let firstWorkout = sortedWorkouts.first {
+            let today = Calendar.current.startOfDay(for: Date())
+            let lastWorkoutDay = Calendar.current.startOfDay(for: firstWorkout.startTime)
+            let daysSinceLastWorkout = Calendar.current.dateComponents([.day], from: lastWorkoutDay, to: today).day ?? 0
+            
+            if daysSinceLastWorkout <= 1 {
+                // Count consecutive days from most recent workout
+                currentStreak = 1
+                var checkDate = lastWorkoutDay
+                
+                for i in 1..<sortedWorkouts.count {
+                    let workoutDay = Calendar.current.startOfDay(for: sortedWorkouts[i].startTime)
+                    let daysDiff = Calendar.current.dateComponents([.day], from: workoutDay, to: checkDate).day ?? 0
+                    
+                    if daysDiff == 1 {
+                        currentStreak += 1
+                        checkDate = workoutDay
+                    } else if daysDiff > 1 {
+                        break
+                    }
+                }
+            }
+        }
+        
+        stats.currentStreak = currentStreak
+        stats.longestStreak = longestStreak
+        stats.lastUpdated = Date()
+        
+        calculatedStats = stats
     }
     
     private var headerSection: some View {
@@ -95,15 +191,45 @@ struct ProfileView: View {
     
     private func profileInfoSection(user: User) -> some View {
         VStack(spacing: RunstrSpacing.md) {
-            // Profile picture placeholder
-            Circle()
-                .fill(Color.runstrGray.opacity(0.3))
-                .frame(width: 80, height: 80)
-                .overlay(
-                    Image(systemName: "person.fill")
-                        .font(.title)
-                        .foregroundColor(.runstrGray)
-                )
+            HStack {
+                Spacer()
+                Button {
+                    showingProfileEdit = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.title3)
+                        .foregroundColor(.runstrWhite)
+                }
+            }
+            
+            // Profile picture
+            if let profilePictureURL = user.profile.profilePicture,
+               let url = URL(string: profilePictureURL) {
+                AsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 80, height: 80)
+                        .clipShape(Circle())
+                } placeholder: {
+                    Circle()
+                        .fill(Color.runstrGray.opacity(0.3))
+                        .frame(width: 80, height: 80)
+                        .overlay(
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .runstrGray))
+                        )
+                }
+            } else {
+                Circle()
+                    .fill(Color.runstrGray.opacity(0.3))
+                    .frame(width: 80, height: 80)
+                    .overlay(
+                        Image(systemName: "person.fill")
+                            .font(.title)
+                            .foregroundColor(.runstrGray)
+                    )
+            }
             
             // User info
             VStack(spacing: RunstrSpacing.xs) {
@@ -123,59 +249,7 @@ struct ProfileView: View {
         .runstrCard()
     }
     
-    private func nostrIdentitySection(user: User) -> some View {
-        VStack(alignment: .leading, spacing: RunstrSpacing.md) {
-            HStack {
-                Image(systemName: "at")
-                    .foregroundColor(.purple)
-                Text("Nostr Identity")
-                    .font(.runstrSubheadline)
-                    .foregroundColor(.runstrWhite)
-                Spacer()
-                Circle()
-                    .fill(nostrService.isConnected ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-            }
-            
-            VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
-                Text("Public Key (npub)")
-                    .font(.runstrCaption)
-                    .foregroundColor(.runstrGray)
-                
-                Button {
-                    UIPasteboard.general.string = user.nostrPublicKey
-                } label: {
-                    HStack {
-                        Text(user.nostrPublicKey)
-                            .font(.runstrSmall)
-                            .foregroundColor(.runstrWhite)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        
-                        Spacer()
-                        
-                        Image(systemName: "doc.on.doc")
-                            .font(.runstrCaption)
-                            .foregroundColor(.runstrGray)
-                    }
-                }
-            }
-            
-            if nostrService.isConnected {
-                Text("Connected to Nostr relays - ready to post workout summaries")
-                    .font(.runstrCaption)
-                    .foregroundColor(.green)
-            } else {
-                Text("Not connected to Nostr relays")
-                    .font(.runstrCaption)
-                    .foregroundColor(.red)
-            }
-        }
-        .padding(RunstrSpacing.lg)
-        .runstrCard()
-    }
-    
-    private func keyStatsSection(user: User) -> some View {
+    private func keyStatsSection() -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: RunstrSpacing.md) {
             // Total workouts
             VStack(alignment: .leading, spacing: RunstrSpacing.xs) {
@@ -188,7 +262,7 @@ struct ProfileView: View {
                         .foregroundColor(.runstrGray)
                 }
                 
-                Text("\(user.stats.totalWorkouts)")
+                Text("\(calculatedStats.totalWorkouts)")
                     .font(.runstrMetric)
                     .foregroundColor(.runstrWhite)
                 
@@ -211,7 +285,7 @@ struct ProfileView: View {
                         .foregroundColor(.runstrGray)
                 }
                 
-                Text(user.stats.formattedTotalDistance)
+                Text(calculatedStats.formattedTotalDistance(unitService: unitPreferences))
                     .font(.runstrMetric)
                     .foregroundColor(.runstrWhite)
                 
@@ -234,7 +308,7 @@ struct ProfileView: View {
                         .foregroundColor(.runstrGray)
                 }
                 
-                Text("\(user.stats.currentStreak)")
+                Text("\(calculatedStats.currentStreak)")
                     .font(.runstrMetric)
                     .foregroundColor(.runstrWhite)
                 
@@ -257,7 +331,7 @@ struct ProfileView: View {
                         .foregroundColor(.runstrGray)
                 }
                 
-                Text("\(user.stats.longestStreak)")
+                Text("\(calculatedStats.longestStreak)")
                     .font(.runstrMetric)
                     .foregroundColor(.runstrWhite)
                 
@@ -271,7 +345,7 @@ struct ProfileView: View {
         }
     }
     
-    private func activityOverviewSection(user: User) -> some View {
+    private func activityOverviewSection() -> some View {
         VStack(alignment: .leading, spacing: RunstrSpacing.md) {
             HStack {
                 Image(systemName: "chart.bar")
@@ -287,7 +361,7 @@ struct ProfileView: View {
                         .font(.runstrBody)
                         .foregroundColor(.runstrGray)
                     Spacer()
-                    Text(String(format: "%.1f km", user.stats.averageDistancePerWorkout / 1000))
+                    Text(unitPreferences.formatDistance(calculatedStats.averageDistancePerWorkout, precision: 1))
                         .font(.runstrBody)
                         .foregroundColor(.runstrWhite)
                 }
@@ -297,7 +371,7 @@ struct ProfileView: View {
                         .font(.runstrBody)
                         .foregroundColor(.runstrGray)
                     Spacer()
-                    Text(formatLastWorkoutDate(user.stats.lastWorkoutDate))
+                    Text(formatLastWorkoutDate(calculatedStats.lastWorkoutDate))
                         .font(.runstrBody)
                         .foregroundColor(.runstrWhite)
                 }
@@ -326,7 +400,6 @@ struct ProfileView: View {
             }
             
             VStack(spacing: RunstrSpacing.xs) {
-                let recentWorkouts = workoutStorage.getRecentWorkouts(limit: 5)
                 
                 if recentWorkouts.isEmpty {
                     VStack(spacing: RunstrSpacing.sm) {
@@ -349,7 +422,7 @@ struct ProfileView: View {
                         NavigationLink {
                             WorkoutDetailView(workout: workout)
                         } label: {
-                            WorkoutRowView(workout: workout)
+                            WorkoutRowView(workout: workout, unitPreferences: unitPreferences)
                         }
                         .buttonStyle(PlainButtonStyle())
                         
@@ -391,4 +464,6 @@ struct ProfileView: View {
         .environmentObject(AuthenticationService())
         .environmentObject(HealthKitService())
         .environmentObject(NostrService())
+        .environmentObject(WorkoutStorage())
+        .environmentObject(UnitPreferencesService())
 }

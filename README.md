@@ -1,182 +1,201 @@
 # RUNSTR iOS
 
-A Bitcoin-native fitness app that rewards users with real Bitcoin (sats) for their workout activities. RUNSTR leverages the Nostr protocol for decentralized data storage and social features, creating a unique fitness ecosystem where users can earn, compete, and connect.
+> **Nostr-native cardio tracking designed to be simple, effective, and truly yours.**
+
+RUNSTR transforms workout tracking by making your fitness data truly portable while maintaining complete privacy. Built on the Nostr protocol with local-first architecture, it's the first fitness app where you actually own your workout data.
 
 ## 🏃‍♂️ Overview
 
-RUNSTR transforms fitness tracking into a rewarding experience by:
-- **Earning Bitcoin**: Get sats for every workout, personal best, and achievement
-- **Nostr Integration**: Decentralized workout data and social features
-- **Team Challenges**: Join teams, compete in events, and climb leaderboards
-- **AI Coaching**: Get personalized training advice from Coach Claude
+**Simple. Effective. Yours.**
+- **Local-First Architecture**: Your workout data stays on your device
+- **Nostr Integration**: Share workouts using Kind 1301 events for true data portability
+- **Universal Sync**: Works with any fitness app through HealthKit integration
+- **Clean Interface**: Distraction-free workout tracking experience
 
 ## ✨ Key Features
 
-### 🏃 Activity Tracking
-- **Multi-Sport Support**: Running, walking, cycling with GPS tracking
-- **Real-time Stats**: Distance, pace, heart rate, elevation
-- **Apple Health Integration**: Sync with HealthKit and Apple Watch
-- **Nostr Publishing**: Workouts stored as NIP-101e events
+### 🏃 Universal Workout Tracking
+- **HealthKit Integration** - Syncs workouts from all your fitness apps
+- **Real-Time Tracking** - Live GPS, heart rate, pace, distance monitoring
+- **Apple Watch Support** - Seamless tracking across devices
+- **Activity Types** - Running, cycling, walking, and more
 
-### ₿ Bitcoin Rewards
-- **Instant Rewards**: Earn 5-10 sats per workout
-- **Lightning Integration**: Zebedee API for instant payments
-- **Gift Cards**: Spend sats on Amazon, Visa, fitness retailers
-- **Streak Bonuses**: Extra rewards for consistency
+### 🌐 Nostr-Native Data Portability
+- **Kind 1301 Events** - Your workouts become interoperable across Nostr
+- **Selective Sharing** - Choose exactly which workout data to publish
+- **Decentralized Storage** - No corporate silos or data lock-in
+- **Privacy Control** - Share publicly or with specific communities
 
-### 🌐 Nostr-Powered Social
-- **Decentralized Identity**: Auto-generated npub/nsec pairs
-- **Delegated Signing**: Link existing Nostr identity
-- **Workout Sharing**: Public fitness achievements
-- **Team Chat**: Real-time messaging via Nostr
+### 📊 Comprehensive Analytics
+- **Performance Statistics** - Weekly and monthly summaries
+- **Progress Tracking** - Monitor improvements over time
+- **Route Visualization** - GPS-mapped workout routes
+- **Data Export** - Multiple formats for complete portability
 
-### 👥 Teams & Events
-- **Team Formation**: Captains create and manage teams
-- **Virtual Events**: Distance challenges, time trials
-- **Leaderboards**: Team and individual rankings
-- **Challenge System**: 1v1 competitions with push notifications
-
-### 💎 Subscription Tiers
-- **Member ($3.99/month)**: Access to teams and events
-- **Captain ($10.99/month)**: Create teams, earn per member
-- **Organization ($24.99/month)**: Create events, member rewards
+### 🔒 Privacy-First Design
+- **Local Storage** - All data stored securely on your device
+- **No Cloud Dependencies** - Core functionality works completely offline
+- **Optional Sharing** - Nostr publishing is entirely user-controlled
+- **Zero Tracking** - No analytics, telemetry, or data collection
 
 ## 🛠 Technical Architecture
 
 ### Frontend
-- **SwiftUI**: Native iOS interface with dark theme
-- **Combine**: Reactive data flow
-- **Core Location**: GPS tracking
-- **HealthKit**: Fitness data integration
-- **AuthenticationServices**: Apple Sign-In
+- **Framework**: SwiftUI + UIKit for iOS 15.0+
+- **Architecture**: MVVM with ObservableObject services
+- **State Management**: @StateObject, @EnvironmentObject, @Published
 
-### Backend Services
-- **Nostr Protocol**: Decentralized data storage
-  - NIP-01: Basic event publishing
-  - NIP-101e: Workout data format
-  - NIP-51: Team and event lists
-- **Lightning Network**: Bitcoin payments via Zebedee
-- **Bitcoin Company API**: Gift card redemption
+### Key Integrations
+- **HealthKit**: Universal workout data sync (running, cycling, walking)
+- **Apple Watch**: Seamless workout tracking
+- **NostrSDK**: Optional workout sharing to Nostr relays
+- **Core Location**: GPS tracking for outdoor workouts
 
 ### Data Storage
-- **Keychain**: Secure nsec storage
-- **CoreData**: Local workout cache
-- **Nostr Relays**: Distributed workout history
-- **iCloud**: Settings and preferences sync
+- **Local-First**: Core Data for workout persistence
+- **Keychain**: Secure Nostr key storage (optional)
+- **No Cloud Dependencies**: All data stored locally
+- **Optional Nostr Publishing**: Kind 1301 events for interoperability
 
 ## 📱 App Structure
 
 ```
 RUNSTR IOS/
-├── Models/
-│   ├── User.swift              # User profile and authentication
-│   ├── Workout.swift           # Workout data and session
-│   ├── Team.swift              # Team management
-│   ├── Event.swift             # Events and challenges
-│   ├── CashuWallet.swift       # Bitcoin wallet integration
-│   └── NostrModels.swift       # Nostr event structures
-├── Services/
-│   ├── AuthenticationService.swift    # User authentication
-│   ├── HealthKitService.swift         # Apple Health integration
-│   ├── LocationService.swift          # GPS tracking
-│   └── NostrService.swift             # Nostr client (planned)
-├── Views/
-│   ├── DashboardView.swift     # Main workout interface
-│   ├── WorkoutView.swift       # Active workout tracking
-│   ├── StatsView.swift         # Profile and statistics
-│   ├── TeamsView.swift         # Team management
-│   ├── EventsView.swift        # Events and challenges
-│   └── OnboardingView.swift    # User onboarding
-└── Supporting Files/
-    ├── Assets.xcassets         # App icons and images
-    └── Info.plist             # App configuration
+├── Models/           # Core data models (User, Workout)
+├── Services/         # Core services (Auth, HealthKit, Location, WorkoutStorage)
+├── Views/           # SwiftUI views
+│   ├── WorkoutView.swift         # Live workout tracking
+│   ├── DashboardView.swift       # Workout history & stats
+│   ├── AllWorkoutsView.swift     # Complete workout list
+│   ├── WorkoutDetailView.swift   # Individual workout details
+│   ├── ProfileView.swift         # User profile & settings
+│   └── SettingsView.swift        # App preferences
+├── Extensions/      # Swift extensions
+├── Utilities/       # Helper functions and constants
+└── Assets.xcassets/ # App icons, colors, images
 ```
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- iOS 17.0+
-- Xcode 15.0+
-- Apple Developer Account (for device testing)
+- **Xcode 15.0+** with iOS SDK
+- **iOS 15.0+** deployment target
+- **Physical iOS Device** (required for HealthKit testing)
+- **Apple Developer Account** (for HealthKit entitlements)
 
 ### Installation
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/HealthNoteLabs/RUNSTR-IOS.git
-   ```
+```bash
+git clone https://github.com/your-username/runstr-ios.git
+cd runstr-ios
+open "RUNSTR IOS.xcodeproj"
+```
+
+### Setup Steps
+1. Clone the repository
 2. Open `RUNSTR IOS.xcodeproj` in Xcode
-3. Select your development team in Signing & Capabilities
-4. Build and run on simulator or device
+3. Configure signing & capabilities:
+   - Enable HealthKit capability
+   - Set up development team
+4. Build and run on physical device
 
-### Configuration
-- **Mock Authentication**: Development uses mock Apple Sign-In
-- **Test Data**: Sample workouts and users for testing
-- **Simulator**: GPS simulation available in Debug menu
+### Testing
+```bash
+# Run unit tests
+xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=iPhone 15"
 
-## 🔮 Roadmap
+# Run UI tests
+xcodebuild test -scheme "RUNSTR IOS" -destination "platform=iOS Simulator,name=iPhone 15" -testPlan UITests
+```
 
-### Phase 1: Core Features ✅
-- [x] Basic UI and navigation
-- [x] Mock authentication system
-- [x] Activity tracking foundation
-- [x] Minimalist black/white design
+## 🌐 Nostr Integration
 
-### Phase 2: Nostr Integration 🚧
-- [ ] Enhanced npub/nsec generation
-- [ ] Delegated signing implementation
-- [ ] NIP-101e workout publishing
-- [ ] Basic social features
+RUNSTR implements **Kind 1301 events** for workout data interoperability:
 
-### Phase 3: Bitcoin Integration
-- [ ] Zebedee Lightning wallet
-- [ ] Rewards calculation system
-- [ ] Gift card redemption
-- [ ] Apple Pay subscriptions
+```swift
+// Example: Publishing a workout to Nostr
+let workoutEvent = try NostrEvent.builder()
+    .kind(.custom(1301))
+    .content(workoutSummary)
+    .tags(workoutTags)
+    .build(signedBy: keypair)
+```
 
-### Phase 4: Social Features
-- [ ] Team creation and management
-- [ ] Real-time chat system
-- [ ] Challenge notifications
-- [ ] Event leaderboards
+**Supported Features:**
+- Selective workout data sharing
+- Granular privacy controls
+- Multi-relay publishing
+- Decentralized fitness communities
 
-### Phase 5: AI & Advanced Features
-- [ ] Coach Claude integration
-- [ ] Voice coaching during workouts
-- [ ] Advanced analytics
-- [ ] Social media sharing
+## 📊 Core Services
+
+### AuthenticationService
+- Apple Sign-In integration
+- Optional Nostr keypair generation
+- Secure key storage in iOS Keychain
+
+### HealthKitService
+- Universal workout data sync
+- Real-time health metrics
+- Background data synchronization
+
+### LocationService
+- GPS tracking for outdoor workouts
+- Battery-optimized location tracking
+- Route recording and visualization
+
+### WorkoutStorage
+- Local workout data persistence
+- Core Data integration
+- Export functionality
+
+## 🚀 Development
+
+### Key Principles
+- **No Mock Data** - Production app uses real data only
+- **Privacy-First** - All data stays on device by default
+- **Minimalistic** - Clean, distraction-free interface
+- **Local-First** - Core functionality works offline
+
+### Code Conventions
+- SwiftUI views: PascalCase (`DashboardView.swift`)
+- Services: Suffix with "Service" (`HealthKitService`)
+- Models: Clean, Codable structs
+- Constants: Organized in dedicated file
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 🔒 Security
+## 🔒 Security & Privacy
 
-- **Private Keys**: nsec stored in iOS Keychain
-- **Delegated Signing**: No private key exposure
-- **Secure Communication**: HTTPS/WSS only
-- **Apple Guidelines**: Follows iOS security best practices
+**True Data Ownership**
+- All workout data stored locally on device
+- Optional Nostr sharing is user-controlled
+- No corporate data collection or analytics
+- Secure Nostr key storage in iOS Keychain
+
+**Privacy Features**
+- All data stays on device
+- Optional Nostr sharing (user controlled)
+- No analytics or telemetry
+- No user account required for core features
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## 🔗 Resources
 
-- **Nostr Protocol**: For decentralized social infrastructure
-- **Lightning Network**: For instant Bitcoin payments
-- **Apple HealthKit**: For comprehensive fitness tracking
-- **Zebedee**: For Lightning wallet services
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/HealthNoteLabs/RUNSTR-IOS/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/HealthNoteLabs/RUNSTR-IOS/discussions)
-- **Email**: support@runstr.app
+- [Nostr Protocol](https://nostr.com/) - Decentralized social networking protocol
+- [Apple HealthKit](https://developer.apple.com/documentation/healthkit/) - iOS health data framework
+- [NostrSDK for iOS](https://github.com/nostr-sdk/nostr-sdk-ios) - Nostr integration library
 
 ---
 
-**RUNSTR** - Where fitness meets Bitcoin. Every step counts, every sat earned. 🏃‍♂️₿
+**Built with ❤️ for the decentralized fitness community**
+
+*Your workouts. Your data. Your choice.*

@@ -1,6 +1,7 @@
 import Foundation
 import AuthenticationServices
 import HealthKit
+import NostrSDK
 
 struct User: Codable, Identifiable {
     let id: String
@@ -13,13 +14,31 @@ struct User: Codable, Identifiable {
     var stats: UserStats
     var loginMethod: LoginMethod
     
-    // Apple Sign-In initializer
-    init(appleUserID: String?, email: String?, nostrKeys: NostrKeyPair) {
+    // Apple Sign-In initializer with optional Nostr keys (generated automatically if empty)
+    init(appleUserID: String?, email: String?, nostrPublicKey: String = "", nostrPrivateKey: String = "") {
         self.id = UUID().uuidString
         self.appleUserID = appleUserID
         self.email = email
-        self.nostrPublicKey = nostrKeys.publicKey
-        self.nostrPrivateKey = nostrKeys.privateKey
+        
+        // Generate real Nostr keys if not provided
+        if nostrPublicKey.isEmpty || nostrPrivateKey.isEmpty {
+            if let nostrSDKKeypair = Keypair() {
+                let keyPair = NostrKeyPair(
+                    privateKey: nostrSDKKeypair.privateKey.nsec,
+                    publicKey: nostrSDKKeypair.publicKey.npub
+                )
+                self.nostrPublicKey = keyPair.publicKey
+                self.nostrPrivateKey = keyPair.privateKey
+            } else {
+                // Fallback if key generation fails
+                self.nostrPublicKey = ""
+                self.nostrPrivateKey = ""
+            }
+        } else {
+            self.nostrPublicKey = nostrPublicKey
+            self.nostrPrivateKey = nostrPrivateKey
+        }
+        
         self.createdAt = Date()
         self.profile = UserProfile()
         self.stats = UserStats()
@@ -81,6 +100,40 @@ struct UserProfile: Codable {
         self.fitnessGoals = FitnessGoals()
         self.preferences = UserPreferences()
     }
+    
+    // MARK: - Profile Update Methods
+    
+    /// Update profile information
+    mutating func updateProfile(displayName: String? = nil, about: String? = nil, profilePicture: String? = nil) {
+        if let displayName = displayName {
+            self.displayName = displayName
+        }
+        if let about = about {
+            self.about = about
+        }
+        if let profilePicture = profilePicture {
+            self.profilePicture = profilePicture
+        }
+    }
+    
+    /// Update from Nostr profile data
+    mutating func updateFromNostrProfile(_ nostrProfile: NostrProfile) {
+        if let displayName = nostrProfile.displayName, !displayName.isEmpty {
+            self.displayName = displayName
+        }
+        if let about = nostrProfile.about, !about.isEmpty {
+            self.about = about
+        }
+        if let picture = nostrProfile.picture, !picture.isEmpty {
+            self.profilePicture = picture
+        }
+        if let banner = nostrProfile.banner, !banner.isEmpty {
+            self.banner = banner
+        }
+        if let nip05 = nostrProfile.nip05, !nip05.isEmpty {
+            self.nip05 = nip05
+        }
+    }
 }
 
 struct FitnessGoals: Codable {
@@ -131,10 +184,16 @@ struct UserStats: Codable {
         return max(0, days)
     }
     
-    /// Get formatted total distance
+    /// Get formatted total distance (legacy - use formattedTotalDistance(unitService:) instead)
     var formattedTotalDistance: String {
         let km = totalDistance / 1000
         return String(format: "%.1f km", km)
+    }
+    
+    /// Get formatted total distance using unit preferences
+    @MainActor
+    func formattedTotalDistance(unitService: UnitPreferencesService) -> String {
+        return unitService.formatDistance(totalDistance, precision: 1)
     }
     
     /// Get average distance per workout

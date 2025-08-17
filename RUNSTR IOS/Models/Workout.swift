@@ -18,6 +18,7 @@ struct Workout: Identifiable, Codable {
     var steps: Int?
     var route: [CLLocationCoordinate2D]?
     var elevationGain: Double?
+    var elevationLoss: Double?
     let weather: WeatherCondition?
     let nostrEventID: String? // Reference to published NIP-101e note
     var rewardAmount: Int? // Bitcoin reward in sats
@@ -39,7 +40,7 @@ struct Workout: Identifiable, Codable {
         
         var splits: [WorkoutSplit] = []
         
-        for i in 0..<splitCount {
+        for _ in 0..<splitCount {
             splits.append(WorkoutSplit(
                 distance: 1000,
                 time: duration / Double(splitCount),
@@ -88,6 +89,7 @@ struct Workout: Identifiable, Codable {
         self.steps = nil
         self.route = nil
         self.elevationGain = nil
+        self.elevationLoss = nil
         self.weather = nil
         self.nostrEventID = nil
         self.rewardAmount = nil
@@ -102,6 +104,7 @@ struct Workout: Identifiable, Codable {
          averageHeartRate: Double? = nil, 
          maxHeartRate: Double? = nil,
          elevationGain: Double? = nil,
+         elevationLoss: Double? = nil,
          steps: Int? = nil,
          locations: [CLLocationCoordinate2D] = []) {
         
@@ -114,9 +117,15 @@ struct Workout: Identifiable, Codable {
         self.distance = distance
         
         // Calculate average pace (min/km)
-        let hours = self.duration / 3600
+        let minutes = self.duration / 60  // Convert seconds to minutes directly
         let kmDistance = distance / 1000
-        self.averagePace = kmDistance > 0 ? (hours * 60) / kmDistance : 0
+        self.averagePace = kmDistance > 0 ? minutes / kmDistance : 0
+        
+        // Debug: Log pace calculation for verification
+        print("📊 Pace Calculation Debug:")
+        print("   Duration: \(self.duration) seconds (\(minutes) minutes)")
+        print("   Distance: \(distance) meters (\(kmDistance) km)")
+        print("   Calculated Pace: \(self.averagePace) min/km")
         
         self.calories = calories
         self.averageHeartRate = averageHeartRate
@@ -124,19 +133,57 @@ struct Workout: Identifiable, Codable {
         self.steps = steps
         self.route = locations.isEmpty ? nil : locations
         self.elevationGain = elevationGain
+        self.elevationLoss = elevationLoss
         self.weather = nil
         self.nostrEventID = nil
         self.rewardAmount = nil
     }
     
     var pace: String {
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
         let minutes = Int(averagePace)
         let seconds = Int((averagePace - Double(minutes)) * 60)
-        return String(format: "%d:%02d /km", minutes, seconds)
+        let unit = useMetric ? "/km" : "/mi"
+        return String(format: "%d:%02d %@", minutes, seconds, unit)
     }
     
     var distanceFormatted: String {
-        return String(format: "%.2f km", distance / 1000)
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        if useMetric {
+            return String(format: "%.2f km", distance / 1000)
+        } else {
+            let miles = distance * 0.000621371 // Convert meters to miles
+            return String(format: "%.2f mi", miles)
+        }
+    }
+    
+    var paceInPreferredUnits: Double {
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        if useMetric {
+            return averagePace // Already in min/km
+        } else {
+            // Convert min/km to min/mile
+            return averagePace * 1.60934
+        }
+    }
+    
+    var distanceInPreferredUnits: Double {
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        if useMetric {
+            return distance / 1000 // Convert meters to km
+        } else {
+            return distance * 0.000621371 // Convert meters to miles
+        }
+    }
+    
+    var preferredDistanceUnit: String {
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        return useMetric ? "km" : "mi"
+    }
+    
+    var preferredPaceUnit: String {
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        return useMetric ? "min/km" : "min/mi"
     }
     
     var durationFormatted: String {
@@ -151,10 +198,48 @@ struct Workout: Identifiable, Codable {
         }
     }
     
+    // MARK: - Unit-aware formatting methods
+    
+    /// Get formatted distance using unit preferences
+    @MainActor
+    func distanceFormatted(unitService: UnitPreferencesService) -> String {
+        return unitService.formatDistance(distance)
+    }
+    
+    /// Get formatted pace using unit preferences
+    @MainActor
+    func paceFormatted(unitService: UnitPreferencesService) -> String {
+        return unitService.formatPace(averagePace)
+    }
+    
+    /// Get distance value in preferred units
+    @MainActor
+    func distanceInPreferredUnits(unitService: UnitPreferencesService) -> Double {
+        return unitService.convertDistance(distance)
+    }
+    
+    /// Get pace value in preferred units
+    @MainActor
+    func paceInPreferredUnits(unitService: UnitPreferencesService) -> Double {
+        return unitService.convertPace(averagePace)
+    }
+    
+    /// Get distance unit abbreviation
+    @MainActor
+    func distanceUnit(unitService: UnitPreferencesService) -> String {
+        return unitService.distanceUnit
+    }
+    
+    /// Get pace unit abbreviation
+    @MainActor
+    func paceUnit(unitService: UnitPreferencesService) -> String {
+        return unitService.paceUnit
+    }
+    
     // MARK: - Codable
     private enum CodingKeys: String, CodingKey {
         case id, userID, activityType, startTime, endTime, duration, distance, averagePace, calories
-        case averageHeartRate, maxHeartRate, elevationGain, weather, nostrEventID, route, steps, rewardAmount
+        case averageHeartRate, maxHeartRate, elevationGain, elevationLoss, weather, nostrEventID, route, steps, rewardAmount
     }
     
     init(from decoder: Decoder) throws {
@@ -172,6 +257,7 @@ struct Workout: Identifiable, Codable {
         maxHeartRate = try container.decodeIfPresent(Double.self, forKey: .maxHeartRate)
         steps = try container.decodeIfPresent(Int.self, forKey: .steps)
         elevationGain = try container.decodeIfPresent(Double.self, forKey: .elevationGain)
+        elevationLoss = try container.decodeIfPresent(Double.self, forKey: .elevationLoss)
         weather = try container.decodeIfPresent(WeatherCondition.self, forKey: .weather)
         nostrEventID = try container.decodeIfPresent(String.self, forKey: .nostrEventID)
         rewardAmount = try container.decodeIfPresent(Int.self, forKey: .rewardAmount)
@@ -202,6 +288,7 @@ struct Workout: Identifiable, Codable {
         try container.encodeIfPresent(maxHeartRate, forKey: .maxHeartRate)
         try container.encodeIfPresent(steps, forKey: .steps)
         try container.encodeIfPresent(elevationGain, forKey: .elevationGain)
+        try container.encodeIfPresent(elevationLoss, forKey: .elevationLoss)
         try container.encodeIfPresent(weather, forKey: .weather)
         try container.encodeIfPresent(nostrEventID, forKey: .nostrEventID)
         
@@ -230,6 +317,44 @@ struct WorkoutSplit: Codable {
     let pace: Double // minutes per km
 }
 
+struct LiveWorkoutSplit: Identifiable {
+    let id = UUID()
+    let splitNumber: Int
+    let distance: Double // meters (actual distance covered for current split)
+    let time: TimeInterval // seconds for this split
+    let pace: Double // minutes per km
+    let isCompleted: Bool
+    
+    var distanceFormatted: String {
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        if useMetric {
+            return String(format: "%.2f km", distance / 1000)
+        } else {
+            let miles = distance * 0.000621371
+            return String(format: "%.2f mi", miles)
+        }
+    }
+    
+    var paceFormatted: String {
+        guard pace > 0 && pace.isFinite else { return "--:--" }
+        
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        let displayPace = useMetric ? pace : pace * 1.60934 // Convert to min/mile if needed
+        
+        let minutes = Int(displayPace)
+        let seconds = Int((displayPace - Double(minutes)) * 60)
+        let unit = useMetric ? "/km" : "/mi"
+        return String(format: "%d:%02d%@", minutes, seconds, unit)
+    }
+    
+    var timeFormatted: String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+@MainActor
 class WorkoutSession: ObservableObject {
     @Published var isActive: Bool = false
     @Published var isPaused: Bool = false
@@ -244,15 +369,27 @@ class WorkoutSession: ObservableObject {
     @Published var locations: [CLLocation] = []
     @Published var isGPSReady: Bool = false
     @Published var accuracy: Double = 0
+    @Published var currentSplits: [LiveWorkoutSplit] = []
+    @Published var currentSplitProgress: LiveWorkoutSplit?
     
     private var timer: Timer?
     private var startTime: Date?
+    private var pauseStartTime: Date?  // Track when pause started
+    private var totalPausedTime: TimeInterval = 0  // Accumulate total paused duration
     private var healthKitService: HealthKitService?
     private var locationService: LocationService?
+    private var hapticService: HapticFeedbackService?
     
-    func configure(healthKitService: HealthKitService, locationService: LocationService) {
+    // Split tracking properties
+    private var lastSplitDistance: Double = 0
+    private var lastSplitTime: TimeInterval = 0
+    private var splitStartTime: Date?
+    private var splitDistance: Double = 1000 // Default 1km splits
+    
+    func configure(healthKitService: HealthKitService, locationService: LocationService, hapticService: HapticFeedbackService? = nil) {
         self.healthKitService = healthKitService
         self.locationService = locationService
+        self.hapticService = hapticService
     }
     
     func startWorkout(activityType: ActivityType, userID: String) async -> Bool {
@@ -280,11 +417,27 @@ class WorkoutSession: ObservableObject {
             isActive = true
             isPaused = false
             startTime = Date()
+            pauseStartTime = nil
+            totalPausedTime = 0
             elapsedTime = 0
             currentDistance = 0
             currentCalories = 0
             locations.removeAll()
+            
+            // Initialize split tracking
+            currentSplits.removeAll()
+            currentSplitProgress = nil
+            lastSplitDistance = 0
+            lastSplitTime = 0
+            splitStartTime = Date()
+            
+            // Set split distance based on unit preference
+            let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+            splitDistance = useMetric ? 1000 : 1609.34 // 1km or 1 mile
         }
+        
+        // Configure location service with activity type for accuracy improvements
+        locationService.setActivityType(activityType)
         
         // Start services
         let healthKitStarted = await healthKitService.startWorkoutSession(activityType: activityType)
@@ -313,19 +466,27 @@ class WorkoutSession: ObservableObject {
         
         Task { @MainActor in
             isPaused = true
+            pauseStartTime = Date()  // Record when pause started
             timer?.invalidate()
         }
         
         // Pause location tracking
         locationService?.pauseTracking()
         
-        print("⏸️ Workout paused")
+        print("⏸️ Workout paused at \(Date())")
     }
     
     func resumeWorkout() {
         guard isActive, isPaused else { return }
         
         Task { @MainActor in
+            // Calculate how long we were paused
+            if let pauseStart = pauseStartTime {
+                let pauseDuration = Date().timeIntervalSince(pauseStart)
+                totalPausedTime += pauseDuration
+                print("⏸️ Was paused for \(String(format: "%.1f", pauseDuration)) seconds")
+            }
+            pauseStartTime = nil
             isPaused = false
             
             // Restart timer
@@ -339,7 +500,7 @@ class WorkoutSession: ObservableObject {
         // Resume location tracking
         locationService?.resumeTracking()
         
-        print("▶️ Workout resumed")
+        print("▶️ Workout resumed at \(Date())")
     }
     
     func endWorkout() async -> Workout? {
@@ -355,21 +516,29 @@ class WorkoutSession: ObservableObject {
         // Stop location tracking
         locationService?.stopTracking()
         
-        // End HealthKit session and get final workout
-        let finalWorkout = await healthKitService?.endWorkoutSession()
+        // End HealthKit session
+        _ = await healthKitService?.endWorkoutSession()
         
         guard var workout = currentWorkout else { return nil }
         
         // Update workout with final data on main thread
         await MainActor.run {
-            workout.duration = elapsedTime
+            // If still paused when ending, add final pause duration
+            var finalElapsedTime = elapsedTime
+            if isPaused, let pauseStart = pauseStartTime {
+                let finalPauseDuration = Date().timeIntervalSince(pauseStart)
+                finalElapsedTime = Date().timeIntervalSince(startTime ?? Date()) - (totalPausedTime + finalPauseDuration)
+            }
+            workout.duration = finalElapsedTime
             workout.distance = currentDistance
             workout.averagePace = calculateAveragePace()
             workout.calories = currentCalories
             workout.steps = currentSteps
             workout.averageHeartRate = currentHeartRate
             workout.route = locations.map { $0.coordinate }
-            workout.elevationGain = calculateElevationGain()
+            let elevationData = calculateElevationGainAndLoss()
+            workout.elevationGain = elevationData.gain
+            workout.elevationLoss = elevationData.loss
             workout.endTime = Date()
             
             currentWorkout = nil
@@ -383,8 +552,9 @@ class WorkoutSession: ObservableObject {
     private func updateWorkoutData() {
         guard let startTime = startTime, !isPaused else { return }
         
-        // Update elapsed time
-        elapsedTime = Date().timeIntervalSince(startTime)
+        // Calculate elapsed time correctly: total time - paused time
+        let totalTime = Date().timeIntervalSince(startTime)
+        elapsedTime = totalTime - totalPausedTime
         
         // Sync data from services
         if let locationService = locationService {
@@ -396,8 +566,9 @@ class WorkoutSession: ObservableObject {
             isGPSReady = locationService.isGPSReady
             accuracy = locationService.accuracy
             
-            // Log significant changes
+            // Update splits when distance changes
             if abs(currentDistance - oldDistance) > 10 { // 10+ meters change
+                updateSplits()
                 print("🏃 Distance updated: \(String(format: "%.0f", currentDistance))m, Pace: \(String(format: "%.1f", currentPace)) min/km")
             }
         }
@@ -405,36 +576,53 @@ class WorkoutSession: ObservableObject {
         if let healthKitService = healthKitService {
             currentHeartRate = healthKitService.currentHeartRate
             currentCalories = healthKitService.currentCalories
-            currentSteps = healthKitService.currentSteps
-            
-            // Log heart rate updates
-            if let hr = currentHeartRate {
-                print("❤️ Heart Rate: \(Int(hr)) bpm, Calories: \(String(format: "%.0f", currentCalories)), Steps: \(currentSteps)")
-            }
+        }
+        
+        // Calculate steps from distance using average stride length
+        let averageStrideLength = 0.75 // meters per step (average adult)
+        currentSteps = currentDistance > 0 ? Int(currentDistance / averageStrideLength) : 0
+        
+        // Log workout updates
+        if let hr = currentHeartRate {
+            print("❤️ Heart Rate: \(Int(hr)) bpm, Calories: \(String(format: "%.0f", currentCalories)), Steps: \(currentSteps) (estimated)")
+        } else if currentSteps > 0 {
+            print("📊 Distance: \(String(format: "%.0f", currentDistance))m, Calories: \(String(format: "%.0f", currentCalories)), Steps: \(currentSteps) (estimated)")
         }
     }
     
     private func calculateAveragePace() -> Double {
         guard currentDistance > 0 else { return 0 }
-        return (elapsedTime / 60) / (currentDistance / 1000) // minutes per km
+        let pace = (elapsedTime / 60) / (currentDistance / 1000) // minutes per km
+        
+        // Debug: Log real-time pace calculation
+        print("🏃 Real-time Pace Debug:")
+        print("   Elapsed Time: \(elapsedTime) seconds")
+        print("   Current Distance: \(currentDistance) meters")
+        print("   Calculated Pace: \(pace) min/km")
+        
+        return pace
     }
     
     
-    private func calculateElevationGain() -> Double {
-        guard locations.count > 1 else { return 0.0 }
+    private func calculateElevationGainAndLoss() -> (gain: Double, loss: Double) {
+        guard locations.count > 1 else { return (0.0, 0.0) }
         
         var elevationGain: Double = 0.0
+        var elevationLoss: Double = 0.0
+        
         // Ensure we have at least 2 locations before creating range
         let locationCount = locations.count
-        guard locationCount >= 2 else { return 0.0 }
+        guard locationCount >= 2 else { return (0.0, 0.0) }
         
         for i in 1..<locationCount {
             let altitudeDifference = locations[i].altitude - locations[i-1].altitude
             if altitudeDifference > 0 {
                 elevationGain += altitudeDifference
+            } else if altitudeDifference < 0 {
+                elevationLoss += abs(altitudeDifference)
             }
         }
-        return elevationGain
+        return (gain: elevationGain, loss: elevationLoss)
     }
     
     private func formatTime(_ timeInterval: TimeInterval) -> String {
@@ -447,5 +635,59 @@ class WorkoutSession: ObservableObject {
         } else {
             return String(format: "%d:%02d", minutes, seconds)
         }
+    }
+    
+    // MARK: - Split Tracking
+    
+    private func updateSplits() {
+        let completedSplits = Int(currentDistance / splitDistance)
+        
+        // Check if we've completed a new split
+        if completedSplits > currentSplits.count {
+            // Complete the previous split
+            if currentSplits.count > 0 || lastSplitDistance > 0 {
+                let splitTime = elapsedTime - lastSplitTime
+                let splitPace = splitTime > 0 ? (splitTime / 60) / (splitDistance / 1000) : 0
+                
+                let completedSplit = LiveWorkoutSplit(
+                    splitNumber: currentSplits.count + 1,
+                    distance: splitDistance,
+                    time: splitTime,
+                    pace: splitPace,
+                    isCompleted: true
+                )
+                
+                currentSplits.append(completedSplit)
+                lastSplitDistance = currentDistance
+                lastSplitTime = elapsedTime
+                
+                // Trigger haptic feedback for split completion
+                hapticService?.splitCompleted()
+                
+                print("✅ Split \(completedSplit.splitNumber) completed: \(formatTime(splitTime)) @ \(formatPace(splitPace))")
+            }
+        }
+        
+        // Update current split progress
+        let currentSplitDistance = currentDistance - (Double(currentSplits.count) * splitDistance)
+        let currentSplitTime = elapsedTime - lastSplitTime
+        let currentSplitPace = currentSplitTime > 0 && currentSplitDistance > 100 ? 
+            (currentSplitTime / 60) / (currentSplitDistance / 1000) : currentPace
+        
+        currentSplitProgress = LiveWorkoutSplit(
+            splitNumber: currentSplits.count + 1,
+            distance: currentSplitDistance,
+            time: currentSplitTime,
+            pace: currentSplitPace,
+            isCompleted: false
+        )
+    }
+    
+    private func formatPace(_ pace: Double) -> String {
+        guard pace > 0 && pace.isFinite else { return "--:--" }
+        
+        let minutes = Int(pace)
+        let seconds = Int((pace - Double(minutes)) * 60)
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }

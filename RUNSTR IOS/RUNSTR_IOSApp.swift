@@ -13,12 +13,9 @@ struct RUNSTR_IOSApp: App {
     @StateObject private var healthKitService = HealthKitService()
     @StateObject private var locationService = LocationService()
     @StateObject private var workoutSession = WorkoutSession()
-    @StateObject private var nostrService = NostrService()
     @StateObject private var workoutStorage = WorkoutStorage()
-    
-    init() {
-        // Configuration will be done in onAppear
-    }
+    @StateObject private var nostrService = NostrService() // Now lightweight
+    @StateObject private var unitPreferences = UnitPreferencesService()
     
     var body: some Scene {
         WindowGroup {
@@ -29,16 +26,14 @@ struct RUNSTR_IOSApp: App {
                 .environmentObject(workoutSession)
                 .environmentObject(nostrService)
                 .environmentObject(workoutStorage)
+                .environmentObject(unitPreferences)
                 .preferredColorScheme(.dark)
                 .task {
-                    // Configure workout session with services first
+                    // Configure workout session with services
                     workoutSession.configure(
                         healthKitService: healthKitService,
                         locationService: locationService
                     )
-                    
-                    // Request permissions on app startup
-                    await requestInitialPermissions()
                 }
         }
     }

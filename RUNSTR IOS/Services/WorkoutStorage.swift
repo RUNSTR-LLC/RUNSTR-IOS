@@ -11,26 +11,55 @@ class WorkoutStorage: ObservableObject {
     private let workoutsKey = "stored_workouts"
     
     init() {
-        loadWorkouts()
+        // Don't load workouts during init to avoid blocking app startup
+        // Workouts will be loaded when the dashboard is accessed
     }
     
     // MARK: - Public Methods
     
+    /// Ensure workouts are loaded from storage
+    func ensureWorkoutsLoaded() {
+        if !workouts.isEmpty || isLoading {
+            return // Already loaded or currently loading
+        }
+        loadWorkouts()
+    }
+    
     /// Save a workout to local storage
     func saveWorkout(_ workout: Workout) {
-        workouts.append(workout)
-        persistWorkouts()
-        print("✅ Workout saved locally: \(workout.distanceFormatted), \(workout.durationFormatted)")
+        ensureWorkoutsLoaded() // Make sure workouts are loaded first
+        
+        // Check for duplicates based on start time and distance (within tolerance)
+        let isDuplicate = workouts.contains { existingWorkout in
+            let timeDifference = abs(existingWorkout.startTime.timeIntervalSince(workout.startTime))
+            let distanceDifference = abs(existingWorkout.distance - workout.distance)
+            
+            // Consider duplicate if within 1 minute and 10 meters difference
+            return timeDifference < 60 && distanceDifference < 10
+        }
+        
+        if !isDuplicate {
+            workouts.append(workout)
+            persistWorkouts()
+            print("✅ Workout saved locally: \(workout.distanceFormatted), \(workout.durationFormatted)")
+            
+            // Post notification for profile updates
+            NotificationCenter.default.post(name: .workoutCompleted, object: workout)
+        } else {
+            print("⚠️ Duplicate workout detected, not saving: \(workout.distanceFormatted), \(workout.durationFormatted)")
+        }
     }
     
     
     /// Get workouts for a specific activity type
     func getWorkouts(for activityType: ActivityType) -> [Workout] {
+        ensureWorkoutsLoaded()
         return workouts.filter { $0.activityType == activityType }
     }
     
     /// Get recent workouts (last 30 days)
     func getRecentWorkouts(limit: Int = 20) -> [Workout] {
+        ensureWorkoutsLoaded()
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
         return workouts
             .filter { $0.startTime >= thirtyDaysAgo }
@@ -39,8 +68,15 @@ class WorkoutStorage: ObservableObject {
             .map { $0 }
     }
     
+    /// Get all workouts
+    func getAllWorkouts() -> [Workout] {
+        ensureWorkoutsLoaded()
+        return workouts.sorted { $0.startTime > $1.startTime }
+    }
+    
     /// Get workout by ID
     func getWorkout(id: String) -> Workout? {
+        ensureWorkoutsLoaded()
         return workouts.first { $0.id == id }
     }
     
@@ -52,6 +88,7 @@ class WorkoutStorage: ObservableObject {
     
     /// Get total stats for all workouts
     func getTotalStats() -> WorkoutTotalStats {
+        ensureWorkoutsLoaded()
         let totalDistance = workouts.reduce(0.0) { $0 + $1.distance }
         let totalDuration = workouts.reduce(0.0) { $0 + $1.duration }
         let totalCalories = workouts.compactMap { $0.calories }.reduce(0.0, +)
@@ -69,6 +106,7 @@ class WorkoutStorage: ObservableObject {
     
     /// Get personal records
     func getPersonalRecords() -> [ActivityType: WorkoutPersonalRecords] {
+        ensureWorkoutsLoaded()
         var records: [ActivityType: WorkoutPersonalRecords] = [:]
         
         for activityType in ActivityType.allCases {
@@ -151,6 +189,12 @@ struct WorkoutTotalStats {
     
     var formattedDistance: String {
         return String(format: "%.1f km", totalDistance / 1000)
+    }
+    
+    /// Get formatted distance using unit preferences
+    @MainActor
+    func formattedDistance(unitService: UnitPreferencesService) -> String {
+        return unitService.formatDistance(totalDistance, precision: 1)
     }
     
     var formattedDuration: String {

@@ -3,14 +3,21 @@ import HealthKit
 import CoreLocation
 import Combine
 
+@MainActor
 class HealthKitService: NSObject, ObservableObject {
     private let healthStore = HKHealthStore()
     @Published var isAuthorized = false
     @Published var authorizationStatus: HKAuthorizationStatus = .notDetermined
     @Published var currentHeartRate: Double?
     @Published var currentCalories: Double = 0
-    @Published var currentSteps: Int = 0
+    // currentSteps now calculated in WorkoutSession from distance
     @Published var isWorkoutActive = false
+    
+    // Individual permission tracking
+    @Published var canReadSteps = false
+    @Published var canReadHeartRate = false
+    @Published var canReadCalories = false
+    @Published var canWriteWorkouts = false
     
     // Track workout session timing
     private var workoutStartTime: Date?
@@ -20,7 +27,6 @@ class HealthKitService: NSObject, ObservableObject {
     // private var workoutBuilder: HKWorkoutBuilder? // not needed for basic implementation
     private var heartRateQuery: HKAnchoredObjectQuery?
     private var calorieQuery: HKAnchoredObjectQuery?
-    private var stepCountQuery: HKAnchoredObjectQuery?
     private var cancellables = Set<AnyCancellable>()
     
     private let typesToRead: Set<HKObjectType> = [
@@ -58,16 +64,21 @@ class HealthKitService: NSObject, ObservableObject {
         do {
             try await healthStore.requestAuthorization(toShare: typesToWrite, read: typesToRead)
             
-            // Check individual authorization status
+            // Check individual authorization status (KEEP ORIGINAL LOGIC)
             let heartRateAuth = healthStore.authorizationStatus(for: HKQuantityType.quantityType(forIdentifier: .heartRate)!)
             let workoutAuth = healthStore.authorizationStatus(for: HKWorkoutType.workoutType())
+            let stepAuth = healthStore.authorizationStatus(for: HKQuantityType.quantityType(forIdentifier: .stepCount)!)
             
             DispatchQueue.main.async {
                 self.authorizationStatus = heartRateAuth
+                // REVERT: Use original working logic
                 self.isAuthorized = heartRateAuth != .notDetermined && workoutAuth != .notDetermined
+                
+                // Add step tracking for debugging only
+                self.canReadSteps = stepAuth == .sharingAuthorized
             }
             
-            print("✅ HealthKit authorization completed - Heart Rate: \(heartRateAuth.rawValue), Workouts: \(workoutAuth.rawValue)")
+            print("✅ HealthKit authorization completed - Heart Rate: \(heartRateAuth.rawValue), Workouts: \(workoutAuth.rawValue), Steps: \(stepAuth.rawValue)")
             return isAuthorized
             
         } catch {
@@ -94,7 +105,6 @@ class HealthKitService: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.isWorkoutActive = true
             self.currentCalories = 0
-            self.currentSteps = 0
             self.currentHeartRate = nil
         }
         
@@ -127,39 +137,112 @@ class HealthKitService: NSObject, ObservableObject {
             return
         }
         
-        // Create a workout builder for iOS 17+
-        let workoutBuilder = HKWorkoutBuilder(healthStore: healthStore, 
-                                            configuration: HKWorkoutConfiguration(), 
-                                            device: .local())
-        
-        // For now, we'll create a simple workout record
-        // In production, you'd use the workout builder pattern
-        let hkWorkout = HKWorkout(
-            activityType: workout.activityType.hkWorkoutActivityType,
-            start: workout.startTime,
-            end: workout.endTime,
-            workoutEvents: nil,
-            totalEnergyBurned: workout.calories.map { HKQuantity(unit: .kilocalorie(), doubleValue: $0) },
-            totalDistance: HKQuantity(unit: .meter(), doubleValue: workout.distance),
-            totalSwimmingStrokeCount: nil,
-            device: .local(),
-            metadata: [
-                HKMetadataKeyExternalUUID: workout.id
-            ]
-        )
-        
-        healthStore.save(hkWorkout) { success, error in
-            if let error = error {
-                print("Failed to save workout to HealthKit: \(error.localizedDescription)")
+        // Use HKWorkoutBuilder for iOS 17+
+        if #available(iOS 17.0, *) {
+            Task {
+                do {
+                    let configuration = HKWorkoutConfiguration()
+                    configuration.activityType = workout.activityType.hkWorkoutActivityType
+                    
+                    let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: configuration, device: .local())
+                    
+                    // Begin the workout
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        builder.beginCollection(withStart: workout.startTime) { success, error in
+                            if let error = error {
+                                continuation.resume(throwing: error)
+                            } else {
+                                continuation.resume()
+                            }
+                        }
+                    }
+                    
+                    // Add samples if available using withCheckedThrowingContinuation
+                    if let calories = workout.calories {
+                        let calorieQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
+                        let calorieSample = HKQuantitySample(type: HKQuantityType(.activeEnergyBurned), 
+                                                           quantity: calorieQuantity, 
+                                                           start: workout.startTime, 
+                                                           end: workout.endTime)
+                        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                            builder.add([calorieSample]) { success, error in
+                                if let error = error {
+                                    continuation.resume(throwing: error)
+                                } else {
+                                    continuation.resume()
+                                }
+                            }
+                        }
+                    }
+                    
+                    let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: workout.distance)
+                    let distanceSample = HKQuantitySample(type: HKQuantityType(.distanceWalkingRunning), 
+                                                        quantity: distanceQuantity, 
+                                                        start: workout.startTime, 
+                                                        end: workout.endTime)
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        builder.add([distanceSample]) { success, error in
+                            if let error = error {
+                                continuation.resume(throwing: error)
+                            } else {
+                                continuation.resume()
+                            }
+                        }
+                    }
+                    
+                    // End collection and create workout
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        builder.endCollection(withEnd: workout.endTime) { success, error in
+                            if let error = error {
+                                continuation.resume(throwing: error)
+                            } else {
+                                continuation.resume()
+                            }
+                        }
+                    }
+                    
+                    let _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<HKWorkout?, Error>) in
+                        builder.finishWorkout { workout, error in
+                            if let error = error {
+                                continuation.resume(throwing: error)
+                            } else {
+                                continuation.resume(returning: workout)
+                            }
+                        }
+                    }
+                    
+                    completion(true)
+                } catch {
+                    print("Failed to save workout with HKWorkoutBuilder: \(error.localizedDescription)")
+                    completion(false)
+                }
             }
-            completion(success)
+        } else {
+            // Fallback for iOS 16 and below
+            let hkWorkout = HKWorkout(
+                activityType: workout.activityType.hkWorkoutActivityType,
+                start: workout.startTime,
+                end: workout.endTime,
+                workoutEvents: nil,
+                totalEnergyBurned: workout.calories.map { HKQuantity(unit: .kilocalorie(), doubleValue: $0) },
+                totalDistance: HKQuantity(unit: .meter(), doubleValue: workout.distance),
+                totalSwimmingStrokeCount: nil,
+                device: .local(),
+                metadata: [
+                    HKMetadataKeyExternalUUID: workout.id
+                ]
+            )
+            
+            healthStore.save(hkWorkout) { success, error in
+                completion(success && error == nil)
+            }
         }
     }
     
     private func startRealTimeQueries() {
         startHeartRateQuery()
         startCalorieQuery()
-        startStepCountQuery()
+        // Step counting now handled by distance-based estimation in WorkoutSession
     }
     
     private func stopRealTimeQueries() {
@@ -173,10 +256,7 @@ class HealthKitService: NSObject, ObservableObject {
             self.calorieQuery = nil
         }
         
-        if let stepCountQuery = stepCountQuery {
-            healthStore.stop(stepCountQuery)
-            self.stepCountQuery = nil
-        }
+        // Step counting cleanup no longer needed - using distance-based estimation
     }
     
     private func startHeartRateQuery() {
@@ -193,11 +273,15 @@ class HealthKitService: NSObject, ObservableObject {
             anchor: nil,
             limit: HKObjectQueryNoLimit
         ) { [weak self] _, samples, _, _, _ in
-            self?.processHeartRateSamples(samples)
+            Task { @MainActor in
+                self?.processHeartRateSamples(samples)
+            }
         }
         
         heartRateQuery?.updateHandler = { [weak self] _, samples, _, _, _ in
-            self?.processHeartRateSamples(samples)
+            Task { @MainActor in
+                self?.processHeartRateSamples(samples)
+            }
         }
         
         if let query = heartRateQuery {
@@ -219,11 +303,15 @@ class HealthKitService: NSObject, ObservableObject {
             anchor: nil,
             limit: HKObjectQueryNoLimit
         ) { [weak self] _, samples, _, _, _ in
-            self?.processCalorieSamples(samples)
+            Task { @MainActor in
+                self?.processCalorieSamples(samples)
+            }
         }
         
         calorieQuery?.updateHandler = { [weak self] _, samples, _, _, _ in
-            self?.processCalorieSamples(samples)
+            Task { @MainActor in
+                self?.processCalorieSamples(samples)
+            }
         }
         
         if let query = calorieQuery {
@@ -257,45 +345,7 @@ class HealthKitService: NSObject, ObservableObject {
         }
     }
     
-    private func startStepCountQuery() {
-        guard isAuthorized, let startTime = workoutStartTime else { return }
-        
-        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
-        let predicate = HKQuery.predicateForSamples(withStart: startTime,
-                                                   end: nil,
-                                                   options: .strictStartDate)
-        
-        stepCountQuery = HKAnchoredObjectQuery(
-            type: stepType,
-            predicate: predicate,
-            anchor: nil,
-            limit: HKObjectQueryNoLimit
-        ) { [weak self] _, samples, _, _, _ in
-            self?.processStepSamples(samples)
-        }
-        
-        stepCountQuery?.updateHandler = { [weak self] _, samples, _, _, _ in
-            self?.processStepSamples(samples)
-        }
-        
-        if let query = stepCountQuery {
-            healthStore.execute(query)
-        }
-    }
     
-    private func processStepSamples(_ samples: [HKSample]?) {
-        guard let stepSamples = samples as? [HKQuantitySample] else { return }
-        
-        let stepUnit = HKUnit.count()
-        let totalSteps = stepSamples.reduce(0.0) { total, sample in
-            return total + sample.quantity.doubleValue(for: stepUnit)
-        }
-        
-        DispatchQueue.main.async {
-            // Set total steps (don't add, since this query gets all samples since start)
-            self.currentSteps = Int(totalSteps)
-        }
-    }
     
     func fetchRecentWorkouts(completion: @escaping ([HKWorkout]) -> Void) {
         guard isAuthorized else {

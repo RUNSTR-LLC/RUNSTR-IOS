@@ -3,34 +3,49 @@ import AuthenticationServices
 
 struct OnboardingView: View {
     @EnvironmentObject var authService: AuthenticationService
+    @EnvironmentObject var nostrService: NostrService
     @State private var currentPage = 0
     
     private let onboardingPages = [
         OnboardingPage(
             title: "RUNSTR",
-            subtitle: "Track your cardio workouts",
+            subtitle: "Fitness tracking for the decentralized web",
             imageName: "runstr_logo",
-            description: "",
+            description: "Connect with Nostr, track your activity, and share your achievements with the world.",
             isLogo: true
         ),
         OnboardingPage(
-            title: "Track Running, Walking & Cycling",
-            subtitle: "",
+            title: "Login & Track Your Activity",
+            subtitle: "Universal fitness tracking",
             imageName: "figure.run",
-            description: "",
+            description: "Sign in with Apple and automatically sync workouts from any fitness app through HealthKit integration.",
             isLogo: false
         ),
         OnboardingPage(
-            title: "Save Locally or Share on Nostr",
-            subtitle: "",
+            title: "Post Your Workouts to Nostr",
+            subtitle: "Share on the decentralized web",
             imageName: "square.and.arrow.up",
-            description: "",
+            description: "Optionally share your fitness achievements to Nostr relays and connect with the global fitness community.",
             isLogo: false
         )
     ]
     
     var body: some View {
         VStack {
+            // Nostr connection status at top
+            if currentPage == onboardingPages.count - 1 {
+                HStack(spacing: 8) {
+                    Circle()
+                        .stroke(nostrService.isConnected ? Color.white : Color.gray, lineWidth: 1)
+                        .background(Circle().fill(nostrService.isConnected ? Color.white : Color.clear))
+                        .frame(width: 6, height: 6)
+                    Text(nostrService.isConnected ? "Connected to Nostr" : "Connecting...")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                }
+                .padding(.top, 10)
+            }
+            
             TabView(selection: $currentPage) {
                 ForEach(0..<onboardingPages.count, id: \.self) { index in
                     OnboardingPageView(page: onboardingPages[index])
@@ -68,8 +83,8 @@ struct OnboardingView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(Color.orange)
-                    .foregroundColor(.white)
+                    .background(Color.white)
+                    .foregroundColor(.black)
                     .cornerRadius(25)
                     .font(.headline)
                     

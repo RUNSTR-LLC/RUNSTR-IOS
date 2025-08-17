@@ -7,7 +7,7 @@ struct WorkoutSummaryView: View {
     @EnvironmentObject var workoutStorage: WorkoutStorage
     @EnvironmentObject var nostrService: NostrService
     
-    @State private var region: MKCoordinateRegion
+    private var region: MKCoordinateRegion
     @State private var showShareSheet = false
     @State private var showNostrComposer = false
     @State private var nostrMessage = ""
@@ -19,15 +19,15 @@ struct WorkoutSummaryView: View {
         // Initialize map region based on workout route
         if let route = workout.route, !route.isEmpty {
             let center = route[route.count / 2] // Middle of route
-            self._region = State(initialValue: MKCoordinateRegion(
+            self.region = MKCoordinateRegion(
                 center: center,
                 span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-            ))
+            )
         } else {
-            self._region = State(initialValue: MKCoordinateRegion(
+            self.region = MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
                 span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-            ))
+            )
         }
     }
     
@@ -98,7 +98,7 @@ struct WorkoutSummaryView: View {
         VStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 60))
-                .foregroundColor(.green)
+                .foregroundColor(.white)
             
             Text("Great job!")
                 .font(.title)
@@ -122,7 +122,7 @@ struct WorkoutSummaryView: View {
                 Spacer()
             }
             
-            Map(coordinateRegion: $region)
+            Map(position: .constant(MapCameraPosition.region(region)))
                 .frame(height: 200)
                 .cornerRadius(12)
                 .overlay(
@@ -150,12 +150,39 @@ struct WorkoutSummaryView: View {
                 color: .green
             )
             
-            StatCard(
-                title: "Pace",
-                value: workout.pace,
-                icon: "speedometer",
-                color: .orange
-            )
+            // Activity-specific third stat
+            switch workout.activityType {
+            case .running:
+                StatCard(
+                    title: "Pace",
+                    value: workout.pace,
+                    icon: "speedometer",
+                    color: .orange
+                )
+            case .cycling:
+                StatCard(
+                    title: "Speed",
+                    value: formatSpeed(),
+                    icon: "speedometer",
+                    color: .orange
+                )
+            case .walking:
+                if let steps = workout.steps, steps > 0 {
+                    StatCard(
+                        title: "Steps",
+                        value: "\(steps)",
+                        icon: "figure.walk",
+                        color: .orange
+                    )
+                } else {
+                    StatCard(
+                        title: "Pace",
+                        value: workout.pace,
+                        icon: "speedometer",
+                        color: .orange
+                    )
+                }
+            }
         }
     }
     
@@ -180,12 +207,14 @@ struct WorkoutSummaryView: View {
                     )
                 }
                 
-                if let elevation = workout.elevationGain, elevation > 0 {
-                    SecondaryStatView(
-                        title: "Elevation",
-                        value: "\(Int(elevation))",
-                        unit: "m",
-                        icon: "mountain.2.fill"
+                // Elevation gain and loss - custom display for directional indicators
+                let hasElevationGain = workout.elevationGain != nil && workout.elevationGain! > 0
+                let hasElevationLoss = workout.elevationLoss != nil && workout.elevationLoss! > 0
+                
+                if hasElevationGain || hasElevationLoss {
+                    ElevationStatView(
+                        elevationGain: hasElevationGain ? workout.elevationGain! : nil,
+                        elevationLoss: hasElevationLoss ? workout.elevationLoss! : nil
                     )
                 }
             }
@@ -245,10 +274,10 @@ struct WorkoutSummaryView: View {
                     }
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
-                .background(Color.purple)
+                .background(Color.white)
                 .cornerRadius(12)
             }
             .disabled(isPostingToNostr)
@@ -268,7 +297,7 @@ struct WorkoutSummaryView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
-                .background(Color.blue)
+                .background(Color.runstrGray)
                 .cornerRadius(12)
             }
             
@@ -290,21 +319,91 @@ struct WorkoutSummaryView: View {
         }
     }
     
+    private func formatSpeed() -> String {
+        // Calculate speed from distance and duration
+        let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
+        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+        
+        if useMetric {
+            return String(format: "%.1f km/h", speedKmh)
+        } else {
+            let speedMph = speedKmh * 0.621371
+            return String(format: "%.1f mph", speedMph)
+        }
+    }
+    
     private func postWorkoutToNostr() async {
         isPostingToNostr = true
         
-        // Create workout summary content
-        let workoutContent = """
-        🏃‍♂️ Just completed a \(workout.activityType.displayName)!
-        📏 Distance: \(workout.distanceFormatted)
+        // Create workout summary content matching the NostrService format
+        let activityText: String
+        switch workout.activityType {
+        case .running:
+            activityText = "run"
+        case .cycling:
+            activityText = "ride"
+        case .walking:
+            activityText = "walk"
+        }
+        
+        var workoutContent = "Just completed a \(activityText) with RUNSTR! "
+        
+        // Add activity-specific emoji
+        switch workout.activityType {
+        case .running:
+            workoutContent += "🏃‍♂️💨"
+        case .cycling:
+            workoutContent += "🚴‍♂️💨"
+        case .walking:
+            workoutContent += "🚶‍♂️💨"
+        }
+        
+        workoutContent += """
+        
+        
         ⏱️ Duration: \(workout.durationFormatted)
-        ⚡ Pace: \(workout.pace)
-        
-        \(nostrMessage.isEmpty ? "" : nostrMessage + "\n\n")
-        Posted from RUNSTR iOS
-        
-        #RUNSTR #Fitness #\(workout.activityType.rawValue)
+        📏 Distance: \(workout.distanceFormatted)
         """
+        
+        // Add activity-specific metrics
+        switch workout.activityType {
+        case .running:
+            workoutContent += "\n⚡ Pace: \(workout.pace)"
+        case .cycling:
+            // Calculate and show speed for cycling
+            let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
+            let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+            if useMetric {
+                workoutContent += "\n🚴‍♂️ Speed: \(String(format: "%.1f", speedKmh)) km/h"
+            } else {
+                let speedMph = speedKmh * 0.621371
+                workoutContent += "\n🚴‍♂️ Speed: \(String(format: "%.1f", speedMph)) mph"
+            }
+        case .walking:
+            // Show steps for walking if available, otherwise show pace
+            if let steps = workout.steps, steps > 0 {
+                workoutContent += "\n👣 Steps: \(steps)"
+            } else {
+                workoutContent += "\n⚡ Pace: \(workout.pace)"
+            }
+        }
+        
+        // Add calories if available
+        if let calories = workout.calories {
+            workoutContent += "\n🔥 Calories: \(Int(calories)) kcal"
+        }
+        
+        // Add elevation data if available
+        if let elevationGain = workout.elevationGain, elevationGain > 0 {
+            workoutContent += "\n\n🏔️ Elevation Gain: \(Int(elevationGain)) m"
+        }
+        
+        // Add custom message if provided
+        if !nostrMessage.isEmpty {
+            workoutContent += "\n\n\(nostrMessage)"
+        }
+        
+        workoutContent += "\n#RUNSTR #\(workout.activityType.displayName)"
         
         let success = await nostrService.publishTextNote(workoutContent)
         
@@ -379,6 +478,50 @@ struct SecondaryStatView: View {
     }
 }
 
+struct ElevationStatView: View {
+    let elevationGain: Double?
+    let elevationLoss: Double?
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "mountain.2.fill")
+                .foregroundColor(.orange)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Elevation")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    if let gain = elevationGain {
+                        HStack(spacing: 2) {
+                            Text("↗")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("\(Int(gain))m")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    if let loss = elevationLoss {
+                        HStack(spacing: 2) {
+                            Text("↘")
+                                .foregroundColor(.red)
+                                .font(.caption)
+                            Text("\(Int(loss))m")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal)
+    }
+}
+
 struct ShareSheet: View {
     let workout: Workout
     @Environment(\.dismiss) private var dismiss
@@ -424,21 +567,54 @@ struct ShareSheet: View {
                 Spacer()
                 
                 Button("Copy to Clipboard") {
-                    let shareText = """
-                    Just completed a \(workout.activityType.displayName)!
+                    let activityText: String
+                    switch workout.activityType {
+                    case .running:
+                        activityText = "run"
+                    case .cycling:
+                        activityText = "ride"
+                    case .walking:
+                        activityText = "walk"
+                    }
+                    
+                    var shareText = """
+                    Just completed a \(activityText)!
                     📏 Distance: \(workout.distanceFormatted)
                     ⏱️ Time: \(workout.durationFormatted)
-                    ⚡ Pace: \(workout.pace)
-                    ₿ Earned: \(workout.rewardAmount ?? 0) sats with RUNSTR
                     """
+                    
+                    // Add activity-specific metrics
+                    switch workout.activityType {
+                    case .running:
+                        shareText += "\n⚡ Pace: \(workout.pace)"
+                    case .cycling:
+                        // Calculate and show speed for cycling
+                        let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
+                        let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+                        if useMetric {
+                            shareText += "\n🚴‍♂️ Speed: \(String(format: "%.1f", speedKmh)) km/h"
+                        } else {
+                            let speedMph = speedKmh * 0.621371
+                            shareText += "\n🚴‍♂️ Speed: \(String(format: "%.1f", speedMph)) mph"
+                        }
+                    case .walking:
+                        // Show steps for walking if available, otherwise show pace
+                        if let steps = workout.steps, steps > 0 {
+                            shareText += "\n👣 Steps: \(steps)"
+                        } else {
+                            shareText += "\n⚡ Pace: \(workout.pace)"
+                        }
+                    }
+                    
+                    shareText += "\n₿ Earned: \(workout.rewardAmount ?? 0) sats with RUNSTR"
                     UIPasteboard.general.string = shareText
                     dismiss()
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
-                .background(Color.orange)
+                .background(Color.white)
                 .cornerRadius(12)
                 .padding()
             }
@@ -512,7 +688,7 @@ struct NostrComposerView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(Color.purple)
+                    .background(Color.white)
                     .cornerRadius(12)
                 }
                 .disabled(isPosting)

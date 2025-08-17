@@ -2,15 +2,16 @@ import SwiftUI
 
 struct WorkoutRowView: View {
     let workout: Workout
+    let unitPreferences: UnitPreferencesService
     
     var body: some View {
         HStack(spacing: RunstrSpacing.md) {
             // Activity icon
             Image(systemName: workout.activityType.systemImageName)
                 .font(.title2)
-                .foregroundColor(.orange)
+                .foregroundColor(.white)
                 .frame(width: 40, height: 40)
-                .background(Color.orange.opacity(0.1))
+                .background(Color.white.opacity(0.1))
                 .clipShape(Circle())
             
             // Workout info
@@ -33,7 +34,7 @@ struct WorkoutRowView: View {
                         Image(systemName: "location.fill")
                             .font(.runstrCaption)
                             .foregroundColor(.runstrGray)
-                        Text(workout.distanceFormatted)
+                        Text(workout.distanceFormatted(unitService: unitPreferences))
                             .font(.runstrCaption)
                             .foregroundColor(.runstrGray)
                     }
@@ -53,7 +54,7 @@ struct WorkoutRowView: View {
                         Image(systemName: "speedometer")
                             .font(.runstrCaption)
                             .foregroundColor(.runstrGray)
-                        Text("\(String(format: "%.1f", workout.averagePace)) min/km")
+                        Text(workout.paceFormatted(unitService: unitPreferences))
                             .font(.runstrCaption)
                             .foregroundColor(.runstrGray)
                     }
@@ -88,25 +89,31 @@ struct WorkoutRowView: View {
 
 #Preview {
     VStack {
-        WorkoutRowView(workout: Workout(
-            activityType: .running,
-            startTime: Date().addingTimeInterval(-3600), // 1 hour ago
-            endTime: Date().addingTimeInterval(-1800), // 30 min ago
-            distance: 5000, // 5km
-            calories: 350,
-            averageHeartRate: 145,
-            locations: []
-        ))
+        WorkoutRowView(
+            workout: Workout(
+                activityType: .running,
+                startTime: Date().addingTimeInterval(-3600), // 1 hour ago
+                endTime: Date().addingTimeInterval(-1800), // 30 min ago
+                distance: 5000, // 5km
+                calories: 350,
+                averageHeartRate: 145,
+                locations: []
+            ),
+            unitPreferences: UnitPreferencesService()
+        )
         
-        WorkoutRowView(workout: Workout(
-            activityType: .cycling,
-            startTime: Date().addingTimeInterval(-86400), // 1 day ago
-            endTime: Date().addingTimeInterval(-83400), // 50 min session
-            distance: 15000, // 15km
-            calories: 500,
-            averageHeartRate: 135,
-            locations: []
-        ))
+        WorkoutRowView(
+            workout: Workout(
+                activityType: .cycling,
+                startTime: Date().addingTimeInterval(-86400), // 1 day ago
+                endTime: Date().addingTimeInterval(-83400), // 50 min session
+                distance: 15000, // 15km
+                calories: 500,
+                averageHeartRate: 135,
+                locations: []
+            ),
+            unitPreferences: UnitPreferencesService()
+        )
     }
     .padding()
     .background(Color.runstrBackground)

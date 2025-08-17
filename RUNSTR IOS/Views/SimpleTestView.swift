@@ -10,7 +10,7 @@ struct SimpleTestView: View {
             Text("RUNSTR")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-                .foregroundColor(.orange)
+                .foregroundColor(.white)
             
             Text("iOS App Test - Login System")
                 .font(.headline)
@@ -18,14 +18,14 @@ struct SimpleTestView: View {
             
             Text(buttonTapped ? "Button Works!" : "")
                 .font(.title2)
-                .foregroundColor(.green)
+                .foregroundColor(.white)
             
             Button("Test Button") {
                 buttonTapped = true
             }
             .padding()
-            .background(Color.orange)
-            .foregroundColor(.white)
+            .background(Color.white)
+            .foregroundColor(.black)
             .cornerRadius(10)
             
             Divider()
@@ -58,7 +58,7 @@ struct SimpleTestView: View {
                         testRunstrSignIn()
                     }
                     .padding()
-                    .background(Color.orange)
+                    .background(Color.gray)
                     .foregroundColor(.white)
                     .cornerRadius(10)
                     .disabled(authService.isLoading)
@@ -67,7 +67,7 @@ struct SimpleTestView: View {
                 if authService.isAuthenticated {
                     VStack(spacing: 8) {
                         Text("✅ Authenticated!")
-                            .foregroundColor(.green)
+                            .foregroundColor(.white)
                             .font(.title3)
                         
                         if let user = authService.currentUser {
@@ -77,7 +77,7 @@ struct SimpleTestView: View {
                             
                             Text("npub: \(user.nostrPublicKey)")
                                 .font(.system(size: 10, weight: .regular, design: .monospaced))
-                                .foregroundColor(.blue)
+                                .foregroundColor(.gray)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
@@ -88,7 +88,7 @@ struct SimpleTestView: View {
                         }
                         .padding(.horizontal)
                         .padding(.vertical, 8)
-                        .background(Color.red)
+                        .background(Color.runstrGrayDark)
                         .foregroundColor(.white)
                         .cornerRadius(8)
                     }

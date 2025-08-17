@@ -11,14 +11,59 @@ struct WorkoutView: View {
     @EnvironmentObject var authService: AuthenticationService
     @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var workoutStorage: WorkoutStorage
+    @StateObject private var hapticService = HapticFeedbackService()
     
     @State private var showingSummary = false
     @State private var completedWorkout: Workout?
+    @State private var showingSplits = false
     
     @State private var region = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 37.7749, longitude: -122.4194),
         span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
     )
+    
+    // Unit conversion computed properties
+    private var useMetricUnits: Bool {
+        UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
+    }
+    
+    private var currentDistanceInPreferredUnits: Double {
+        if useMetricUnits {
+            return workoutSession.currentDistance / 1000 // Convert meters to km
+        } else {
+            return workoutSession.currentDistance * 0.000621371 // Convert meters to miles
+        }
+    }
+    
+    private var currentPaceInPreferredUnits: Double {
+        if useMetricUnits {
+            return workoutSession.currentPace // Already in min/km
+        } else {
+            // Convert min/km to min/mile
+            return workoutSession.currentPace * 1.60934
+        }
+    }
+    
+    private var currentSpeedInPreferredUnits: Double {
+        // Convert m/s to km/h or mph
+        if useMetricUnits {
+            return workoutSession.currentSpeed * 3.6 // m/s to km/h
+        } else {
+            return workoutSession.currentSpeed * 2.23694 // m/s to mph
+        }
+    }
+    
+    private var preferredDistanceUnit: String {
+        useMetricUnits ? "km" : "mi"
+    }
+    
+    private var preferredPaceUnit: String {
+        useMetricUnits ? "min/km" : "min/mi"
+    }
+    
+    private var preferredSpeedUnit: String {
+        useMetricUnits ? "km/h" : "mph"
+    }
     
     var body: some View {
         NavigationView {
@@ -29,13 +74,18 @@ struct WorkoutView: View {
                 // Stats section
                 statsSection
                 
+                // Splits section
+                if workoutSession.currentDistance > 100 { // Show splits after 100m
+                    splitsSection
+                }
+                
                 // Control buttons
                 controlsSection
             }
             .navigationTitle(activityType.displayName)
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden()
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
                         Task {
@@ -46,7 +96,7 @@ struct WorkoutView: View {
                         }
                     }
                 }
-            }
+            })
             .background(Color.black)
             .foregroundColor(.white)
         }
@@ -54,7 +104,10 @@ struct WorkoutView: View {
             print("🏃 WorkoutView appeared with activity type: \(activityType.displayName)")
             
             // Configure WorkoutSession with required services
-            workoutSession.configure(healthKitService: healthKitService, locationService: locationService)
+            workoutSession.configure(healthKitService: healthKitService, locationService: locationService, hapticService: hapticService)
+            
+            // Prepare haptic feedback generators for low latency
+            hapticService.prepareFeedback()
             
             // Request permissions before starting workout
             Task {
@@ -87,7 +140,9 @@ struct WorkoutView: View {
     }
     
     private var mapSection: some View {
-        Map(coordinateRegion: $region, showsUserLocation: true)
+        Map(position: .constant(MapCameraPosition.region(region))) {
+            UserAnnotation()
+        }
         .frame(height: 300)
         .cornerRadius(16)
         .padding(.horizontal)
@@ -101,9 +156,9 @@ struct WorkoutView: View {
                     Text("Distance")
                         .font(.caption)
                         .foregroundColor(.gray)
-                    Text(String(format: "%.2f", workoutSession.currentDistance / 1000))
+                    Text(String(format: "%.2f", currentDistanceInPreferredUnits))
                         .font(.system(size: 48, weight: .bold, design: .rounded))
-                    Text("km")
+                    Text(preferredDistanceUnit)
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
@@ -121,17 +176,33 @@ struct WorkoutView: View {
             
             // Secondary stats
             HStack(spacing: 30) {
-                VStack(spacing: 4) {
-                    Text("Pace")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text(formatPace(workoutSession.currentPace))
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .monospacedDigit()
-                    Text("min/km")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                // Show Speed for cycling, Pace for running/walking
+                if activityType == .cycling {
+                    VStack(spacing: 4) {
+                        Text("Speed")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text(String(format: "%.1f", currentSpeedInPreferredUnits))
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .monospacedDigit()
+                        Text(preferredSpeedUnit)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                } else {
+                    VStack(spacing: 4) {
+                        Text("Pace")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text(formatPace(currentPaceInPreferredUnits))
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .monospacedDigit()
+                        Text(preferredPaceUnit)
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
                 }
                 
                 if let heartRate = healthKitService.currentHeartRate {
@@ -161,6 +232,19 @@ struct WorkoutView: View {
                         .font(.caption)
                         .foregroundColor(.gray)
                 }
+                
+                VStack(spacing: 4) {
+                    Text("Steps")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text("\(workoutSession.currentSteps)")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                    Text("steps")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
             }
             .padding(.horizontal)
         }
@@ -170,10 +254,104 @@ struct WorkoutView: View {
         .padding(.horizontal)
     }
     
+    private var splitsSection: some View {
+        VStack(spacing: 12) {
+            // Section header with toggle
+            HStack {
+                Text("Splits")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Button {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showingSplits.toggle()
+                    }
+                } label: {
+                    Image(systemName: showingSplits ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.gray)
+                        .font(.caption)
+                }
+            }
+            .padding(.horizontal)
+            
+            // Current split progress (always visible)
+            if let currentSplit = workoutSession.currentSplitProgress {
+                HStack {
+                    Text("Split \(currentSplit.splitNumber)")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    
+                    Spacer()
+                    
+                    Text(currentSplit.distanceFormatted)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    Text("@")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    Text(currentSplit.paceFormatted)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .monospacedDigit()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color.gray.opacity(0.2))
+                .cornerRadius(8)
+                .padding(.horizontal)
+            }
+            
+            // Completed splits (collapsible)
+            if showingSplits && !workoutSession.currentSplits.isEmpty {
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        ForEach(workoutSession.currentSplits.reversed()) { split in
+                            HStack {
+                                Text("Split \(split.splitNumber)")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .frame(width: 60, alignment: .leading)
+                                
+                                Text(split.timeFormatted)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .monospacedDigit()
+                                    .frame(width: 50, alignment: .center)
+                                
+                                Spacer()
+                                
+                                Text(split.paceFormatted)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .monospacedDigit()
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal)
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+                .frame(maxHeight: 120)
+                .background(Color.black.opacity(0.3))
+                .cornerRadius(8)
+                .padding(.horizontal)
+            }
+        }
+        .padding(.vertical, 12)
+        .background(Color.gray.opacity(0.1))
+        .cornerRadius(16)
+        .padding(.horizontal)
+    }
+    
     private var controlsSection: some View {
         VStack(spacing: 16) {
             // Pause/Resume or Start button
             Button {
+                hapticService.buttonTap()
                 if workoutSession.isActive {
                     if workoutSession.isPaused {
                         resumeWorkout()
@@ -189,16 +367,17 @@ struct WorkoutView: View {
                     Text(workoutSession.isPaused ? "Resume" : "Pause")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(workoutSession.isPaused ? .black : .white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 56)
-                .background(workoutSession.isPaused ? Color.green : Color.orange)
+                .background(workoutSession.isPaused ? Color.white : Color.gray)
                 .cornerRadius(28)
             }
             
             // End workout button
             if workoutSession.isActive {
                 Button {
+                    hapticService.buttonTap()
                     endWorkout()
                 } label: {
                     Text("Finish Workout")
@@ -206,7 +385,7 @@ struct WorkoutView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
-                        .background(Color.red)
+                        .background(Color.runstrGrayDark)
                         .cornerRadius(28)
                 }
             }
@@ -242,8 +421,11 @@ struct WorkoutView: View {
         Task {
             locationService.startTracking()
             let success = await workoutSession.startWorkout(activityType: activityType, userID: userID)
-            if !success {
+            if success {
+                hapticService.workoutStarted()
+            } else {
                 print("❌ Failed to start workout session")
+                hapticService.error()
             }
         }
     }
@@ -251,11 +433,13 @@ struct WorkoutView: View {
     private func pauseWorkout() {
         workoutSession.pauseWorkout()
         locationService.pauseTracking()
+        hapticService.workoutPaused()
     }
     
     private func resumeWorkout() {
         workoutSession.resumeWorkout()
         locationService.resumeTracking()
+        hapticService.workoutResumed()
     }
     
     private func endWorkout() {
@@ -263,22 +447,28 @@ struct WorkoutView: View {
             locationService.stopTracking()
             
             if let completedWorkout = await workoutSession.endWorkout() {
-                // 1. Save to HealthKit
+                hapticService.workoutEnded()
+                
+                // 1. Save to local storage first
+                workoutStorage.saveWorkout(completedWorkout)
+                
+                // 2. Save to HealthKit
                 healthKitService.saveWorkout(completedWorkout) { success in
                     print("Workout saved to HealthKit: \(success)")
                 }
                 
-                // 2. Update user stats
+                // 3. Update user stats
                 await awardWorkoutReward(for: completedWorkout)
                 
-                // 3. Create Nostr event (if connected)
+                // 4. Create Nostr event (if connected)
                 await publishWorkoutToNostr(completedWorkout)
                 
-                // 4. Store completed workout and show summary
+                // 5. Store completed workout and show summary
                 self.completedWorkout = completedWorkout
                 self.showingSummary = true
             } else {
                 // If workout failed to complete, just dismiss
+                hapticService.error()
                 dismiss()
             }
         }
@@ -337,8 +527,15 @@ struct WorkoutView: View {
     
     /// Publish completed workout to Nostr relays
     private func publishWorkoutToNostr(_ workout: Workout) async {
-        guard let user = authService.currentUser else {
+        guard authService.currentUser != nil else {
             print("❌ No authenticated user for Nostr publishing")
+            return
+        }
+        
+        // Check if auto-post is enabled
+        let autoPostEnabled = UserDefaults.standard.object(forKey: "autoPostRunNotes") as? Bool ?? true
+        guard autoPostEnabled else {
+            print("⚠️ Auto-post disabled in settings")
             return
         }
         
