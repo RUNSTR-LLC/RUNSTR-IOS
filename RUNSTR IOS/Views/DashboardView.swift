@@ -15,7 +15,7 @@ struct DashboardView: View {
     @State private var showingSettingsView = false
     @State private var showingSummary = false
     @State private var completedWorkout: Workout?
-    @State private var recentWorkouts: [Workout] = []
+    @State private var previousWorkout: Workout?
     
     var body: some View {
         NavigationStack {
@@ -30,9 +30,9 @@ struct DashboardView: View {
                     // Start Run button
                     startRunButton
                     
-                    // Recent workouts section
-                    if !recentWorkouts.isEmpty {
-                        recentWorkoutsSection
+                    // Previous workout section
+                    if let previousWorkout = previousWorkout {
+                        previousWorkoutSection(workout: previousWorkout)
                     }
                     
                     Spacer(minLength: 100) // Bottom padding for tab bar
@@ -58,11 +58,11 @@ struct DashboardView: View {
             SettingsView()
         }
         .onAppear {
-            loadRecentWorkouts()
+            loadPreviousWorkout()
         }
         .onReceive(NotificationCenter.default.publisher(for: .workoutCompleted)) { _ in
-            // Reload recent workouts when a new workout is completed
-            loadRecentWorkouts()
+            // Reload previous workout when a new workout is completed
+            loadPreviousWorkout()
         }
     }
     
@@ -328,26 +328,22 @@ struct DashboardView: View {
         }
     }
     
-    private var recentWorkoutsSection: some View {
+    private func previousWorkoutSection(workout: Workout) -> some View {
         VStack(spacing: 20) {
             HStack {
-                Text("Recent Workouts")
+                Text("Previous Workout")
                     .font(.runstrSubheadline)
                     .foregroundColor(.runstrWhite)
                 Spacer()
             }
             
-            VStack(spacing: RunstrSpacing.sm) {
-                ForEach(Array(recentWorkouts.prefix(3).enumerated()), id: \.offset) { index, workout in
-                    WorkoutSummaryCard(
-                        activityType: workout.activityType,
-                        distance: workout.distance,
-                        duration: workout.duration,
-                        date: workout.startTime,
-                        unitPreferences: unitPreferences
-                    )
-                }
-            }
+            WorkoutSummaryCard(
+                activityType: workout.activityType,
+                distance: workout.distance,
+                duration: workout.duration,
+                date: workout.startTime,
+                unitPreferences: unitPreferences
+            )
         }
         .padding(RunstrSpacing.lg)
         .runstrCard()
@@ -367,8 +363,9 @@ struct DashboardView: View {
         }
     }
     
-    private func loadRecentWorkouts() {
-        recentWorkouts = workoutStorage.getRecentWorkouts(limit: 3)
+    private func loadPreviousWorkout() {
+        let recentWorkouts = workoutStorage.getRecentWorkouts(limit: 1)
+        previousWorkout = recentWorkouts.first
     }
     
     // MARK: - Workout Control Functions
