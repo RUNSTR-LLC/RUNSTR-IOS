@@ -8,7 +8,6 @@ struct WorkoutDetailView: View {
     @EnvironmentObject var unitPreferences: UnitPreferencesService
     @Environment(\.dismiss) private var dismiss
     
-    @State private var showShareOptions = false
     @State private var isPublishingPost = false
     @State private var isPublishingRecord = false
     @State private var publishPostSuccess = false
@@ -50,13 +49,15 @@ struct WorkoutDetailView: View {
             .background(Color.runstrBackground)
             .navigationBarHidden(true)
         }
-        .sheet(isPresented: $showShareOptions) {
-            ShareOptionsView(workout: workout)
-        }
-        .alert("Published to Nostr", isPresented: $publishPostSuccess) {
+        .alert("Posted to Nostr", isPresented: $publishPostSuccess) {
             Button("OK") { }
         } message: {
-            Text("Your workout has been published as a kind 1301 event")
+            Text("Your workout has been posted as a social media post (Kind 1 event)")
+        }
+        .alert("Saved to Nostr", isPresented: $publishRecordSuccess) {
+            Button("OK") { }
+        } message: {
+            Text("Your workout has been saved as structured data (Kind 1301 event)")
         }
     }
     
@@ -239,11 +240,11 @@ struct WorkoutDetailView: View {
     private var shareSection: some View {
         VStack(spacing: RunstrSpacing.md) {
             Button {
-                publishToNostr()
+                publishToNostrPost()
             } label: {
                 HStack {
                     Image(systemName: "square.and.arrow.up")
-                    Text("Publish to Nostr")
+                    Text("Post to Nostr")
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, RunstrSpacing.md)
@@ -252,20 +253,21 @@ struct WorkoutDetailView: View {
             .disabled(isPublishingPost)
             
             Button {
-                showShareOptions = true
+                publishToNostrRecord()
             } label: {
                 HStack {
-                    Image(systemName: "square.and.arrow.up.on.square")
-                    Text("Export Workout")
+                    Image(systemName: "archivebox")
+                    Text("Save to Nostr")
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, RunstrSpacing.md)
             }
             .buttonStyle(RunstrSecondaryButton())
+            .disabled(isPublishingRecord)
         }
     }
     
-    private func publishToNostr() {
+    private func publishToNostrPost() {
         isPublishingPost = true
         Task {
             let success = await nostrService.publishWorkoutEvent(workout)
@@ -273,6 +275,19 @@ struct WorkoutDetailView: View {
                 isPublishingPost = false
                 if success {
                     publishPostSuccess = true
+                }
+            }
+        }
+    }
+    
+    private func publishToNostrRecord() {
+        isPublishingRecord = true
+        Task {
+            let success = await nostrService.publishWorkoutRecord(workout)
+            await MainActor.run {
+                isPublishingRecord = false
+                if success {
+                    publishRecordSuccess = true
                 }
             }
         }
@@ -314,64 +329,6 @@ struct MetricCard: View {
     }
 }
 
-struct ShareOptionsView: View {
-    let workout: Workout
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: RunstrSpacing.lg) {
-                Text("Export Options")
-                    .font(.runstrTitle)
-                    .foregroundColor(.runstrWhite)
-                
-                Button {
-                    exportAsJSON()
-                } label: {
-                    HStack {
-                        Image(systemName: "doc.text")
-                        Text("Export as JSON")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, RunstrSpacing.md)
-                }
-                .buttonStyle(RunstrSecondaryButton())
-                
-                Button {
-                    exportAsGPX()
-                } label: {
-                    HStack {
-                        Image(systemName: "map")
-                        Text("Export as GPX")
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, RunstrSpacing.md)
-                }
-                .buttonStyle(RunstrSecondaryButton())
-                .disabled(workout.locations.isEmpty)
-                
-                Spacer()
-                
-                Button("Cancel") {
-                    dismiss()
-                }
-                .foregroundColor(.runstrGray)
-            }
-            .padding(RunstrSpacing.lg)
-            .background(Color.runstrBackground)
-        }
-    }
-    
-    private func exportAsJSON() {
-        // TODO: Implement JSON export
-        dismiss()
-    }
-    
-    private func exportAsGPX() {
-        // TODO: Implement GPX export
-        dismiss()
-    }
-}
 
 #Preview {
     WorkoutDetailView(workout: Workout(

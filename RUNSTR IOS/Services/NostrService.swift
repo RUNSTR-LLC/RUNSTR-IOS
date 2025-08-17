@@ -209,11 +209,62 @@ class NostrService: ObservableObject {
     }
     
     /// Publish Kind 1301 workout record using NostrSDK
-    /// Note: This function is currently disabled due to API compatibility issues
     func publishWorkoutRecord(_ workout: Workout) async -> Bool {
-        // TODO: Implement Kind 1301 workout records when NostrSDK API is stable
-        print("⚠️ Kind 1301 workout records are not currently supported")
-        return false
+        await ensureRelayPoolSetup()
+        
+        // Ensure we have keys loaded
+        ensureKeysLoaded()
+        
+        // Generate new keys if none exist
+        if userKeyPair == nil {
+            guard let newKeyPair = generateRunstrKeys() else {
+                print("❌ Failed to generate new Nostr keys")
+                return false
+            }
+            userKeyPair = newKeyPair
+            storeKeyPair(newKeyPair)
+        }
+        
+        // Ensure keypair is loaded for signing
+        if keypair == nil {
+            keypair = Keypair(nsec: userKeyPair!.privateKey)
+        }
+        
+        guard let keypair = keypair,
+              let relayPool = relayPool else {
+            print("❌ Missing keypair or relay pool")
+            return false
+        }
+        
+        // Create structured workout data for Kind 1301
+        let workoutData = WorkoutEvent.createWorkoutContent(workout: workout)
+        
+        do {
+            // Create kind 1301 workout record event using Builder pattern
+            let builder = NostrEvent.Builder<NostrEvent>(kind: EventKind(rawValue: 1301))
+                .content(workoutData)
+            
+            let signedEvent = try builder.build(signedBy: keypair)
+            
+            // Publish to relays
+            relayPool.publishEvent(signedEvent)
+            
+            await MainActor.run {
+                print("✅ Kind 1301 workout record published to Nostr relays")
+                print("Workout data: \(workoutData)")
+                print("Event ID: \(signedEvent.id)")
+                print("Using npub: \(userKeyPair?.publicKey ?? "unknown")")
+            }
+            
+            return true
+            
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to publish workout record: \(error.localizedDescription)"
+                print("❌ Failed to publish workout record: \(error)")
+            }
+            return false
+        }
     }
     
     /// Ensure keys are loaded from keychain if not already loaded
