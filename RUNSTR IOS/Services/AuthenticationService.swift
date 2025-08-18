@@ -31,6 +31,57 @@ class AuthenticationService: NSObject, ObservableObject {
         authorizationController.performRequests()
     }
     
+    func signInWithNostrKey(_ nsec: String) async -> Bool {
+        print("🚀 Starting Nostr Sign-In with key")
+        
+        do {
+            // Create key pair from nsec using NostrSDK
+            guard let nostrSDKKeypair = Keypair(nsec: nsec) else {
+                throw NSError(domain: "NostrKeyError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid nsec format"])
+            }
+            
+            let keyPair = NostrKeyPair(
+                privateKey: nostrSDKKeypair.privateKey.nsec,
+                publicKey: nostrSDKKeypair.publicKey.npub
+            )
+            
+            // Create user with Nostr authentication
+            let user = User(
+                appleUserID: nil,
+                email: nil,
+                nostrPublicKey: keyPair.publicKey,
+                nostrPrivateKey: keyPair.privateKey
+            )
+            
+            // Update user login method to Nostr
+            var modifiedUser = user
+            modifiedUser.loginMethod = .nostr
+            
+            // Save user to keychain
+            saveUserToKeychain(modifiedUser)
+            
+            // Update published properties on main thread
+            await MainActor.run {
+                currentUser = modifiedUser
+                isAuthenticated = true
+                isLoading = false
+            }
+            
+            print("✅ Successfully signed in with Nostr")
+            print("   📁 Public key: \(keyPair.publicKey)")
+            print("   🔐 Private key: [REDACTED]")
+            
+            return true
+            
+        } catch {
+            print("❌ Failed to sign in with Nostr: \(error.localizedDescription)")
+            await MainActor.run {
+                isLoading = false
+            }
+            return false
+        }
+    }
+    
     
     
     
