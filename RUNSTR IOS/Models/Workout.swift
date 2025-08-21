@@ -3,6 +3,20 @@ import CoreLocation
 import HealthKit
 import MapKit
 
+enum WorkoutSource: String, Codable, CaseIterable {
+    case local = "local"
+    case nostr = "nostr"
+    
+    var displayName: String {
+        switch self {
+        case .local:
+            return "Local"
+        case .nostr:
+            return "Nostr"
+        }
+    }
+}
+
 struct Workout: Identifiable, Codable {
     let id: String
     let userID: String
@@ -22,6 +36,11 @@ struct Workout: Identifiable, Codable {
     let weather: WeatherCondition?
     let nostrEventID: String? // Reference to published NIP-101e note
     var rewardAmount: Int? // Bitcoin reward in sats
+    
+    // Nostr-specific metadata
+    let source: WorkoutSource // Indicates if workout is from local storage or Nostr
+    let nostrPubkey: String? // Author's public key for Nostr workouts
+    let nostrRelaySource: String? // Which relay this was fetched from
     
     // Additional computed properties
     var locations: [CLLocationCoordinate2D] {
@@ -93,6 +112,11 @@ struct Workout: Identifiable, Codable {
         self.weather = nil
         self.nostrEventID = nil
         self.rewardAmount = nil
+        
+        // Default to local source for new workouts
+        self.source = .local
+        self.nostrPubkey = nil
+        self.nostrRelaySource = nil
     }
     
     // Convenience initializer for previews and testing
@@ -106,7 +130,11 @@ struct Workout: Identifiable, Codable {
          elevationGain: Double? = nil,
          elevationLoss: Double? = nil,
          steps: Int? = nil,
-         locations: [CLLocationCoordinate2D] = []) {
+         locations: [CLLocationCoordinate2D] = [],
+         source: WorkoutSource = .local,
+         nostrEventID: String? = nil,
+         nostrPubkey: String? = nil,
+         nostrRelaySource: String? = nil) {
         
         self.id = UUID().uuidString
         self.userID = "preview-user"
@@ -116,8 +144,8 @@ struct Workout: Identifiable, Codable {
         self.duration = endTime.timeIntervalSince(startTime)
         self.distance = distance
         
-        // Calculate average pace (min/km)
-        let minutes = self.duration / 60  // Convert seconds to minutes directly
+        // Calculate average pace (min/km) - FIXED: correct formula is minutes / km
+        let minutes = self.duration / 60  // Convert seconds to minutes
         let kmDistance = distance / 1000
         self.averagePace = kmDistance > 0 ? minutes / kmDistance : 0
         
@@ -135,14 +163,23 @@ struct Workout: Identifiable, Codable {
         self.elevationGain = elevationGain
         self.elevationLoss = elevationLoss
         self.weather = nil
-        self.nostrEventID = nil
+        self.nostrEventID = nostrEventID
         self.rewardAmount = nil
+        
+        // Set source and Nostr metadata
+        self.source = source
+        self.nostrPubkey = nostrPubkey
+        self.nostrRelaySource = nostrRelaySource
     }
     
     var pace: String {
         let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
-        let minutes = Int(averagePace)
-        let seconds = Int((averagePace - Double(minutes)) * 60)
+        let displayPace = paceInPreferredUnits // Use converted value for proper imperial display
+        
+        guard displayPace > 0 && displayPace.isFinite else { return "--:-- \(useMetric ? "/km" : "/mi")" }
+        
+        let minutes = Int(displayPace)
+        let seconds = Int((displayPace - Double(minutes)) * 60)
         let unit = useMetric ? "/km" : "/mi"
         return String(format: "%d:%02d %@", minutes, seconds, unit)
     }
@@ -240,6 +277,7 @@ struct Workout: Identifiable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, userID, activityType, startTime, endTime, duration, distance, averagePace, calories
         case averageHeartRate, maxHeartRate, elevationGain, elevationLoss, weather, nostrEventID, route, steps, rewardAmount
+        case source, nostrPubkey, nostrRelaySource
     }
     
     init(from decoder: Decoder) throws {
@@ -261,6 +299,11 @@ struct Workout: Identifiable, Codable {
         weather = try container.decodeIfPresent(WeatherCondition.self, forKey: .weather)
         nostrEventID = try container.decodeIfPresent(String.self, forKey: .nostrEventID)
         rewardAmount = try container.decodeIfPresent(Int.self, forKey: .rewardAmount)
+        
+        // Decode new Nostr fields with backward compatibility
+        source = try container.decodeIfPresent(WorkoutSource.self, forKey: .source) ?? .local
+        nostrPubkey = try container.decodeIfPresent(String.self, forKey: .nostrPubkey)
+        nostrRelaySource = try container.decodeIfPresent(String.self, forKey: .nostrRelaySource)
         
         // Decode route as array of coordinate dictionaries
         if let routeData = try container.decodeIfPresent([[String: Double]].self, forKey: .route) {
@@ -291,6 +334,12 @@ struct Workout: Identifiable, Codable {
         try container.encodeIfPresent(elevationLoss, forKey: .elevationLoss)
         try container.encodeIfPresent(weather, forKey: .weather)
         try container.encodeIfPresent(nostrEventID, forKey: .nostrEventID)
+        try container.encodeIfPresent(rewardAmount, forKey: .rewardAmount)
+        
+        // Encode new Nostr fields
+        try container.encode(source, forKey: .source)
+        try container.encodeIfPresent(nostrPubkey, forKey: .nostrPubkey)
+        try container.encodeIfPresent(nostrRelaySource, forKey: .nostrRelaySource)
         
         // Encode route as array of coordinate dictionaries
         if let route = route {
@@ -529,8 +578,10 @@ class WorkoutSession: ObservableObject {
                 let finalPauseDuration = Date().timeIntervalSince(pauseStart)
                 finalElapsedTime = Date().timeIntervalSince(startTime ?? Date()) - (totalPausedTime + finalPauseDuration)
             }
+            
+            // Use HealthKit data directly (already validated by HealthKit)
             workout.duration = finalElapsedTime
-            workout.distance = currentDistance
+            workout.distance = currentDistance  // HealthKit provides validated data
             workout.averagePace = calculateAveragePace()
             workout.calories = currentCalories
             workout.steps = currentSteps
@@ -556,49 +607,52 @@ class WorkoutSession: ObservableObject {
         let totalTime = Date().timeIntervalSince(startTime)
         elapsedTime = totalTime - totalPausedTime
         
-        // Sync data from services
-        if let locationService = locationService {
+        // Use HealthKit as the ONLY source for distance and steps
+        if let healthKitService = healthKitService {
             let oldDistance = currentDistance
-            currentDistance = locationService.totalDistance
-            currentPace = locationService.currentPace
-            currentSpeed = locationService.currentSpeed
-            locations = locationService.route
-            isGPSReady = locationService.isGPSReady
-            accuracy = locationService.accuracy
+            
+            // Use HealthKit distance exclusively
+            currentDistance = healthKitService.currentDistance
+            
+            // Calculate pace based on current distance and elapsed time
+            if currentDistance > 0 && elapsedTime > 0 {
+                currentPace = (elapsedTime / 60) / (currentDistance / 1000) // min/km
+                currentSpeed = currentDistance / elapsedTime // m/s
+            }
+            
+            // Use actual steps from HealthKit
+            currentSteps = healthKitService.currentSteps
+            currentHeartRate = healthKitService.currentHeartRate
+            currentCalories = healthKitService.currentCalories
             
             // Update splits when distance changes
             if abs(currentDistance - oldDistance) > 10 { // 10+ meters change
                 updateSplits()
-                print("🏃 Distance updated: \(String(format: "%.0f", currentDistance))m, Pace: \(String(format: "%.1f", currentPace)) min/km")
+                print("🏃 Distance updated: \(String(format: "%.0f", currentDistance))m, Pace: \(String(format: "%.2f", currentPace)) min/km")
             }
         }
         
-        if let healthKitService = healthKitService {
-            currentHeartRate = healthKitService.currentHeartRate
-            currentCalories = healthKitService.currentCalories
+        // Keep GPS data for route visualization only
+        if let locationService = locationService {
+            locations = locationService.route
+            isGPSReady = locationService.isGPSReady
+            accuracy = locationService.accuracy
         }
-        
-        // Calculate steps from distance using average stride length
-        let averageStrideLength = 0.75 // meters per step (average adult)
-        currentSteps = currentDistance > 0 ? Int(currentDistance / averageStrideLength) : 0
         
         // Log workout updates
         if let hr = currentHeartRate {
-            print("❤️ Heart Rate: \(Int(hr)) bpm, Calories: \(String(format: "%.0f", currentCalories)), Steps: \(currentSteps) (estimated)")
+            print("❤️ Heart Rate: \(Int(hr)) bpm, Calories: \(String(format: "%.0f", currentCalories)), Steps: \(currentSteps)")
         } else if currentSteps > 0 {
-            print("📊 Distance: \(String(format: "%.0f", currentDistance))m, Calories: \(String(format: "%.0f", currentCalories)), Steps: \(currentSteps) (estimated)")
+            print("📊 Distance: \(String(format: "%.0f", currentDistance))m, Calories: \(String(format: "%.0f", currentCalories)), Steps: \(currentSteps)")
         }
     }
     
     private func calculateAveragePace() -> Double {
         guard currentDistance > 0 else { return 0 }
-        let pace = (elapsedTime / 60) / (currentDistance / 1000) // minutes per km
         
-        // Debug: Log real-time pace calculation
-        print("🏃 Real-time Pace Debug:")
-        print("   Elapsed Time: \(elapsedTime) seconds")
-        print("   Current Distance: \(currentDistance) meters")
-        print("   Calculated Pace: \(pace) min/km")
+        let kmDistance = currentDistance / 1000
+        guard kmDistance > 0 else { return 0 } // Avoid division by zero
+        let pace = (elapsedTime / 60) / kmDistance // minutes per km
         
         return pace
     }
@@ -688,6 +742,87 @@ class WorkoutSession: ObservableObject {
         
         let minutes = Int(pace)
         let seconds = Int((pace - Double(minutes)) * 60)
-        return String(format: "%d:%02d", minutes, seconds)
+        // Ensure seconds are within valid range
+        let validSeconds = min(max(seconds, 0), 59)
+        return String(format: "%d:%02d", minutes, validSeconds)
+    }
+    
+    // MARK: - Data Validation (Deprecated - HealthKit provides validated data)
+    
+    /// No longer needed - HealthKit provides validated distance
+    private func validateDistance(_ distance: Double, duration: TimeInterval) -> Double {
+        guard distance > 0 && duration > 0 else { return 0 }
+        
+        // Maximum possible speeds by activity (m/s)
+        let maxSpeed: Double
+        if let activityType = currentWorkout?.activityType {
+            switch activityType {
+            case .walking:
+                maxSpeed = 3.0  // ~10.8 km/h max walking speed
+            case .running:
+                maxSpeed = 10.0 // ~36 km/h max running speed (elite sprinter)
+            case .cycling:
+                maxSpeed = 20.0 // ~72 km/h max cycling speed
+            }
+        } else {
+            maxSpeed = 10.0 // Default to running
+        }
+        
+        let maxPossibleDistance = maxSpeed * duration
+        
+        if distance > maxPossibleDistance {
+            print("⚠️ Distance validation failed: \(String(format: "%.0f", distance))m exceeds max possible \(String(format: "%.0f", maxPossibleDistance))m")
+            print("   Capping distance at maximum reasonable value")
+            return maxPossibleDistance
+        }
+        
+        // Also check for minimum reasonable speed (avoid 0 distance for active workouts)
+        let minSpeed = 0.5 // 0.5 m/s minimum (very slow walk)
+        let minPossibleDistance = minSpeed * duration
+        
+        if duration > 60 && distance < minPossibleDistance {
+            print("⚠️ Distance seems too low: \(String(format: "%.0f", distance))m for \(String(format: "%.1f", duration/60)) minutes")
+        }
+        
+        return distance
+    }
+    
+    /// Validate calories to ensure reasonable values
+    private func validateCalories(_ calories: Double, duration: TimeInterval) -> Double {
+        guard calories >= 0 && duration > 0 else { return 0 }
+        
+        // Maximum reasonable calories per minute
+        let maxCaloriesPerMinute = 25.0 // Very intense exercise
+        let maxPossibleCalories = (duration / 60) * maxCaloriesPerMinute
+        
+        if calories > maxPossibleCalories {
+            print("⚠️ Calories validation: \(String(format: "%.0f", calories)) exceeds max \(String(format: "%.0f", maxPossibleCalories))")
+            return maxPossibleCalories
+        }
+        
+        return calories
+    }
+    
+    /// Validate steps count based on distance
+    private func validateSteps(_ steps: Int, distance: Double) -> Int {
+        guard steps >= 0 && distance > 0 else { return 0 }
+        
+        // Reasonable stride length range (meters per step)
+        let minStrideLength = 0.3  // Very short steps
+        let maxStrideLength = 2.5  // Long running strides
+        
+        let maxPossibleSteps = Int(distance / minStrideLength)
+        let minPossibleSteps = Int(distance / maxStrideLength)
+        
+        if steps > maxPossibleSteps {
+            print("⚠️ Steps validation: \(steps) exceeds max possible \(maxPossibleSteps) for distance \(String(format: "%.0f", distance))m")
+            return maxPossibleSteps
+        }
+        
+        if steps < minPossibleSteps && steps > 0 {
+            print("⚠️ Steps seem too low: \(steps) for distance \(String(format: "%.0f", distance))m")
+        }
+        
+        return steps
     }
 }

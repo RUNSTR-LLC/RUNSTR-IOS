@@ -70,6 +70,6 @@
     
     <!-- Minimum iOS Version -->
     <key>MinimumOSVersion</key>
-    <string>16.0</string>
+    <string>17.0</string>
 </dict>
 </plist>

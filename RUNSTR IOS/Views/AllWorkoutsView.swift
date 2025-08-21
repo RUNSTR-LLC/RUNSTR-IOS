@@ -1,18 +1,49 @@
 import SwiftUI
 
+enum WorkoutViewSource: String, CaseIterable {
+    case all = "all"
+    case local = "local"
+    case nostr = "nostr"
+    
+    var displayName: String {
+        switch self {
+        case .all: return "All"
+        case .local: return "Local"
+        case .nostr: return "Nostr"
+        }
+    }
+}
+
 struct AllWorkoutsView: View {
     @EnvironmentObject var workoutStorage: WorkoutStorage
+    @EnvironmentObject var nostrService: NostrService
     @EnvironmentObject var unitPreferences: UnitPreferencesService
     @Environment(\.dismiss) private var dismiss
     
     @State private var selectedFilter: ActivityType? = nil
     @State private var sortOrder: SortOrder = .dateDescending
+    @State private var selectedSource: WorkoutViewSource = .all
+    @State private var isLoadingNostr = false
+    @State private var lastNostrRefresh: Date? = nil
     
     private var filteredWorkouts: [Workout] {
-        let workouts = selectedFilter == nil ? 
-            workoutStorage.workouts :
-            workoutStorage.getWorkouts(for: selectedFilter!)
+        // Combine workouts based on selected source
+        var allWorkouts: [Workout]
+        switch selectedSource {
+        case .all:
+            allWorkouts = workoutStorage.workouts + workoutStorage.nostrWorkouts
+        case .local:
+            allWorkouts = workoutStorage.workouts
+        case .nostr:
+            allWorkouts = workoutStorage.nostrWorkouts
+        }
         
+        // Filter by activity type if selected
+        let workouts = selectedFilter == nil ? 
+            allWorkouts :
+            allWorkouts.filter { $0.activityType == selectedFilter! }
+        
+        // Sort workouts
         switch sortOrder {
         case .dateDescending:
             return workouts.sorted { $0.startTime > $1.startTime }
@@ -40,6 +71,15 @@ struct AllWorkoutsView: View {
             }
             .background(Color.runstrBackground)
             .navigationBarHidden(true)
+            .onAppear {
+                // Load cached Nostr workouts first
+                workoutStorage.loadCachedNostrWorkouts()
+                
+                // Then fetch fresh data if needed
+                Task {
+                    await loadNostrWorkouts()
+                }
+            }
         }
     }
     
@@ -62,12 +102,38 @@ struct AllWorkoutsView: View {
                     .foregroundColor(.runstrWhite)
                 
                 Spacer()
-                
-                // Invisible spacer for centering
-                Image(systemName: "chevron.left")
-                    .font(.title2)
-                    .foregroundColor(.clear)
             }
+            
+            // Source toggle (Local/Nostr/All)
+            HStack(spacing: RunstrSpacing.sm) {
+                ForEach(WorkoutViewSource.allCases, id: \.self) { source in
+                    Button {
+                        selectedSource = source
+                        if source == .nostr && workoutStorage.nostrWorkouts.isEmpty {
+                            Task {
+                                await loadNostrWorkouts()
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            if source == .nostr && isLoadingNostr {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .progressViewStyle(CircularProgressViewStyle(tint: selectedSource == source ? .black : .runstrWhite))
+                            }
+                            
+                            Text(source.displayName)
+                                .font(.runstrCaption)
+                                .foregroundColor(selectedSource == source ? .black : .runstrWhite)
+                        }
+                        .padding(.horizontal, RunstrSpacing.md)
+                        .padding(.vertical, RunstrSpacing.sm)
+                        .background(selectedSource == source ? Color.white : Color.runstrGray.opacity(0.2))
+                        .cornerRadius(RunstrRadius.sm)
+                    }
+                }
+            }
+            .padding(.horizontal, RunstrSpacing.md)
             
             // Filter chips
             ScrollView(.horizontal, showsIndicators: false) {
@@ -155,8 +221,18 @@ struct AllWorkoutsView: View {
                     NavigationLink {
                         WorkoutDetailView(workout: workout)
                     } label: {
-                        WorkoutRowView(workout: workout, unitPreferences: unitPreferences)
-                            .padding(.horizontal, RunstrSpacing.md)
+                        HStack {
+                            WorkoutRowView(workout: workout, unitPreferences: unitPreferences)
+                            
+                            // Source indicator
+                            if workout.source == .nostr {
+                                Image(systemName: "globe")
+                                    .font(.runstrCaption)
+                                    .foregroundColor(.runstrGray)
+                                    .padding(.trailing, RunstrSpacing.sm)
+                            }
+                        }
+                        .padding(.horizontal, RunstrSpacing.md)
                     }
                     .buttonStyle(PlainButtonStyle())
                     
@@ -169,6 +245,40 @@ struct AllWorkoutsView: View {
             }
             .padding(.vertical, RunstrSpacing.sm)
         }
+        .refreshable {
+            await loadNostrWorkouts(forceRefresh: true)
+        }
+    }
+    
+    // MARK: - Nostr Loading Functions
+    
+    @MainActor
+    private func loadNostrWorkouts(forceRefresh: Bool = false) async {
+        // Don't load if we already have data and it's fresh (unless force refresh)
+        if !forceRefresh, !workoutStorage.nostrWorkouts.isEmpty,
+           let lastRefresh = lastNostrRefresh,
+           Date().timeIntervalSince(lastRefresh) < 300 { // 5 minutes
+            print("✅ Using cached Nostr workouts (last refresh: \(lastRefresh))")
+            return
+        }
+        
+        guard nostrService.userKeyPair != nil else {
+            print("⚠️ No Nostr keys available - cannot fetch workout history")
+            return
+        }
+        
+        isLoadingNostr = true
+        
+        print("🔍 Fetching Nostr workout history...")
+        let fetchedWorkouts = await nostrService.fetchUserWorkouts(limit: 50)
+        
+        // Cache the workouts in WorkoutStorage
+        workoutStorage.cacheNostrWorkouts(fetchedWorkouts)
+        lastNostrRefresh = Date()
+        
+        print("✅ Loaded \(workoutStorage.nostrWorkouts.count) Nostr workouts")
+        
+        isLoadingNostr = false
     }
 }
 
@@ -209,4 +319,6 @@ enum SortOrder: CaseIterable {
 #Preview {
     AllWorkoutsView()
         .environmentObject(WorkoutStorage())
+        .environmentObject(NostrService())
+        .environmentObject(UnitPreferencesService())
 }

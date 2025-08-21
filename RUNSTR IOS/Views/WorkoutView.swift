@@ -521,7 +521,9 @@ struct WorkoutView: View {
         
         let minutes = Int(pace)
         let seconds = Int((pace - Double(minutes)) * 60)
-        return String(format: "%d:%02d", minutes, seconds)
+        // Ensure seconds are within valid range (0-59)
+        let validSeconds = min(max(seconds, 0), 59)
+        return String(format: "%d:%02d", minutes, validSeconds)
     }
     
     

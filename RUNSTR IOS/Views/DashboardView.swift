@@ -15,7 +15,6 @@ struct DashboardView: View {
     @State private var showingSettingsView = false
     @State private var showingSummary = false
     @State private var completedWorkout: Workout?
-    @State private var previousWorkout: Workout?
     
     var body: some View {
         NavigationStack {
@@ -30,10 +29,6 @@ struct DashboardView: View {
                     // Start Run button
                     startRunButton
                     
-                    // Previous workout section
-                    if let previousWorkout = previousWorkout {
-                        previousWorkoutSection(workout: previousWorkout)
-                    }
                     
                     Spacer(minLength: 100) // Bottom padding for tab bar
                     
@@ -56,13 +51,6 @@ struct DashboardView: View {
         }
         .sheet(isPresented: $showingSettingsView) {
             SettingsView()
-        }
-        .onAppear {
-            loadPreviousWorkout()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .workoutCompleted)) { _ in
-            // Reload previous workout when a new workout is completed
-            loadPreviousWorkout()
         }
     }
     
@@ -328,26 +316,6 @@ struct DashboardView: View {
         }
     }
     
-    private func previousWorkoutSection(workout: Workout) -> some View {
-        VStack(spacing: 20) {
-            HStack {
-                Text("Previous Workout")
-                    .font(.runstrSubheadline)
-                    .foregroundColor(.runstrWhite)
-                Spacer()
-            }
-            
-            WorkoutSummaryCard(
-                activityType: workout.activityType,
-                distance: workout.distance,
-                duration: workout.duration,
-                date: workout.startTime,
-                unitPreferences: unitPreferences
-            )
-        }
-        .padding(RunstrSpacing.lg)
-        .runstrCard()
-    }
     
     // MARK: - Helper Functions
     
@@ -363,10 +331,6 @@ struct DashboardView: View {
         }
     }
     
-    private func loadPreviousWorkout() {
-        let recentWorkouts = workoutStorage.getRecentWorkouts(limit: 1)
-        previousWorkout = recentWorkouts.first
-    }
     
     // MARK: - Workout Control Functions
     

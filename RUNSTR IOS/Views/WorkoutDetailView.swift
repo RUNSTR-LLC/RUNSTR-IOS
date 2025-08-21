@@ -8,6 +8,7 @@ struct WorkoutDetailView: View {
     @EnvironmentObject var unitPreferences: UnitPreferencesService
     @Environment(\.dismiss) private var dismiss
     
+    @State private var showShareOptions = false
     @State private var isPublishingPost = false
     @State private var isPublishingRecord = false
     @State private var publishPostSuccess = false
@@ -16,38 +17,41 @@ struct WorkoutDetailView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: RunstrSpacing.lg) {
-                    // Header with activity type and date
-                    headerSection
-                    
-                    // Main metrics grid
-                    metricsGrid
-                    
-                    // Map view if GPS data available
-                    if !workout.locations.isEmpty {
-                        mapSection
-                    }
-                    
-                    // Pace chart
-                    if workout.splits.count > 1 {
-                        paceChartSection
-                    }
-                    
-                    // Heart rate data if available
-                    if let avgHR = workout.averageHeartRate {
-                        heartRateSection(avgHR: avgHR)
-                    }
-                    
-                    // Share/Export options
-                    shareSection
-                    
-                    Spacer(minLength: 50)
+            VStack(spacing: RunstrSpacing.lg) {
+                // Header with activity type and date
+                headerSection
+                
+                // Main metrics grid
+                metricsGrid
+                
+                // Map view if GPS data available
+                if !workout.locations.isEmpty {
+                    mapSection
                 }
-                .padding(.horizontal, RunstrSpacing.md)
-                .padding(.top, RunstrSpacing.md)
+                
+                // Pace chart
+                if workout.splits.count > 1 {
+                    paceChartSection
+                }
+                
+                // Heart rate data if available
+                if let avgHR = workout.averageHeartRate {
+                    heartRateSection(avgHR: avgHR)
+                }
+                
+                // Share/Export options
+                shareSection
+                
+                Spacer(minLength: 50)
+            }
+            .padding(.horizontal, RunstrSpacing.md)
+            .padding(.top, RunstrSpacing.md)
             }
             .background(Color.runstrBackground)
             .navigationBarHidden(true)
+        }
+        .sheet(isPresented: $showShareOptions) {
+            ShareOptionsView(workout: workout)
         }
         .alert("Posted to Nostr", isPresented: $publishPostSuccess) {
             Button("OK") { }
@@ -109,12 +113,12 @@ struct WorkoutDetailView: View {
                 unit: ""
             )
             
-            // Pace
+            // Pace - Use proper formatted pace string
             MetricCard(
                 icon: "speedometer",
                 title: "Avg Pace",
-                value: String(format: "%.1f", workout.paceInPreferredUnits(unitService: unitPreferences)),
-                unit: workout.paceUnit(unitService: unitPreferences)
+                value: workout.paceFormatted(unitService: unitPreferences),
+                unit: ""
             )
             
             // Calories
@@ -329,6 +333,64 @@ struct MetricCard: View {
     }
 }
 
+struct ShareOptionsView: View {
+    let workout: Workout
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: RunstrSpacing.lg) {
+                Text("Export Options")
+                    .font(.runstrTitle)
+                    .foregroundColor(.runstrWhite)
+                
+                Button {
+                    exportAsJSON()
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.text")
+                        Text("Export as JSON")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, RunstrSpacing.md)
+                }
+                .buttonStyle(RunstrSecondaryButton())
+                
+                Button {
+                    exportAsGPX()
+                } label: {
+                    HStack {
+                        Image(systemName: "map")
+                        Text("Export as GPX")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, RunstrSpacing.md)
+                }
+                .buttonStyle(RunstrSecondaryButton())
+                .disabled(workout.locations.isEmpty)
+                
+                Spacer()
+                
+                Button("Cancel") {
+                    dismiss()
+                }
+                .foregroundColor(.runstrGray)
+            }
+            .padding(RunstrSpacing.lg)
+            .background(Color.runstrBackground)
+        }
+    }
+    
+    private func exportAsJSON() {
+        // TODO: Implement JSON export
+        dismiss()
+    }
+    
+    private func exportAsGPX() {
+        // TODO: Implement GPX export
+        dismiss()
+    }
+}
 
 #Preview {
     WorkoutDetailView(workout: Workout(

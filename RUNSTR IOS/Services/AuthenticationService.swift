@@ -7,6 +7,7 @@ class AuthenticationService: NSObject, ObservableObject {
     @Published var isAuthenticated = false
     @Published var currentUser: User?
     @Published var isLoading = false
+    @Published var isLoadingProfile = false
     
     private let keychainService = "app.runstr.keychain"
     
@@ -61,7 +62,7 @@ class AuthenticationService: NSObject, ObservableObject {
             saveUserToKeychain(modifiedUser)
             
             // Update published properties on main thread
-            await MainActor.run {
+            await MainActor.run { [modifiedUser] in
                 currentUser = modifiedUser
                 isAuthenticated = true
                 isLoading = false
@@ -70,6 +71,11 @@ class AuthenticationService: NSObject, ObservableObject {
             print("✅ Successfully signed in with Nostr")
             print("   📁 Public key: \(keyPair.publicKey)")
             print("   🔐 Private key: [REDACTED]")
+            
+            // Fetch profile data from Nostr relays in background
+            Task {
+                await fetchAndUpdateUserProfile()
+            }
             
             return true
             
@@ -115,14 +121,18 @@ class AuthenticationService: NSObject, ObservableObject {
             saveUserToKeychain(user)
             
             // Update published properties on main thread
-            let userToSet = user
-            await MainActor.run {
-                currentUser = userToSet
+            await MainActor.run { [user] in
+                currentUser = user
             }
             
             print("✅ Successfully imported Nostr keys")
             print("   📁 Public key: \(keyPair.publicKey)")
             print("   🔐 Private key: [REDACTED]")
+            
+            // Fetch profile data from Nostr relays in background
+            Task {
+                await fetchAndUpdateUserProfile()
+            }
             
             return true
             
@@ -217,6 +227,80 @@ class AuthenticationService: NSObject, ObservableObject {
         SecItemDelete(query as CFDictionary)
     }
     
+    // MARK: - Profile Fetching
+    
+    /// Fetch user profile from Nostr relays and update local profile
+    private func fetchAndUpdateUserProfile() async {
+        guard let user = currentUser, !user.nostrPublicKey.isEmpty else {
+            print("⚠️ No user or public key available for profile fetch")
+            return
+        }
+        
+        await MainActor.run {
+            isLoadingProfile = true
+        }
+        
+        print("🔍 Fetching profile data from Nostr relays...")
+        
+        // Create a temporary NostrService instance for profile fetching
+        let nostrService = await NostrService()
+        await nostrService.connect()
+        
+        // Convert npub to hex format for API call
+        let pubkeyForAPI = extractPubkeyHex(from: user.nostrPublicKey)
+        
+        // Clear any cached profile data to force fresh fetch
+        await nostrService.clearProfileCache(for: pubkeyForAPI)
+        
+        if let nostrProfile = await nostrService.fetchProfile(pubkey: pubkeyForAPI) {
+            print("✅ Profile data fetched successfully")
+            
+            // Update user profile with fetched data
+            var updatedUser = user
+            updatedUser.profile.updateFromNostrProfile(nostrProfile)
+            
+            // Save updated user
+            saveUserToKeychain(updatedUser)
+            
+            // Update published properties on main thread  
+            let finalUser = updatedUser
+            await MainActor.run {
+                currentUser = finalUser
+                isLoadingProfile = false
+                print("✅ User profile updated with Nostr data")
+                print("   📝 Display name: \(nostrProfile.displayName ?? "none")")
+                print("   🖼️ Picture: \(nostrProfile.picture ?? "none")")
+            }
+            
+            // Start background updates
+            await nostrService.startBackgroundProfileUpdates()
+        } else {
+            print("⚠️ Could not fetch profile data from Nostr relays")
+            await MainActor.run {
+                isLoadingProfile = false
+            }
+        }
+        
+        await nostrService.disconnect()
+    }
+    
+    /// Extract hex pubkey from npub format
+    private func extractPubkeyHex(from npub: String) -> String {
+        // Try to convert npub to hex using NostrSDK
+        if let publicKey = PublicKey(npub: npub) {
+            return publicKey.hex
+        }
+        
+        // If that fails, check if it's already in hex format
+        if npub.count == 64 && npub.allSatisfy({ $0.isHexDigit }) {
+            return npub
+        }
+        
+        // Fallback: return the original (NostrSDK should handle various formats)
+        print("⚠️ Could not convert pubkey format, using as-is: \(npub.prefix(20))...")
+        return npub
+    }
+    
 }
 
 extension AuthenticationService: ASAuthorizationControllerPresentationContextProviding {
@@ -284,5 +368,13 @@ enum AuthenticationError: LocalizedError {
         case .localStorageError:
             return "Failed to save user data locally"
         }
+    }
+}
+
+// MARK: - Helper Extensions
+
+extension Character {
+    var isHexDigit: Bool {
+        return self.isNumber || ("a"..."f").contains(self) || ("A"..."F").contains(self)
     }
 }

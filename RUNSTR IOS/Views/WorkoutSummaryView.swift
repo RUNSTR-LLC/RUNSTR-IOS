@@ -321,6 +321,7 @@ struct WorkoutSummaryView: View {
     
     private func formatSpeed() -> String {
         // Calculate speed from distance and duration
+        guard workout.duration > 0 else { return "0.0 km/h" } // Avoid division by zero
         let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
         let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
         
@@ -371,6 +372,7 @@ struct WorkoutSummaryView: View {
             workoutContent += "\n⚡ Pace: \(workout.pace)"
         case .cycling:
             // Calculate and show speed for cycling
+            guard workout.duration > 0 else { break }
             let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
             let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
             if useMetric {
@@ -589,6 +591,7 @@ struct ShareSheet: View {
                         shareText += "\n⚡ Pace: \(workout.pace)"
                     case .cycling:
                         // Calculate and show speed for cycling
+                        guard workout.duration > 0 else { break }
                         let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
                         let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
                         if useMetric {

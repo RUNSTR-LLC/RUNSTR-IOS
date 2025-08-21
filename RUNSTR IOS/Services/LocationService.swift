@@ -8,9 +8,9 @@ class LocationService: NSObject, ObservableObject {
     @Published var currentLocation: CLLocation?
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var route: [CLLocation] = []
-    @Published var totalDistance: Double = 0.0
-    @Published var currentSpeed: Double = 0.0 // m/s
-    @Published var currentPace: Double = 0.0 // min/km
+    // Distance tracking removed - using HealthKit only
+    @Published var currentSpeed: Double = 0.0 // m/s (for display only, not used for distance)
+    @Published var currentPace: Double = 0.0 // min/km (for display only)
     @Published var currentAltitude: Double = 0.0 // meters
     @Published var accuracy: Double = 0.0 // meters
     @Published var isGPSReady: Bool = false
@@ -21,39 +21,40 @@ class LocationService: NSObject, ObservableObject {
     private var startTime: Date?
     private var pausedTime: TimeInterval = 0
     
-    // Route optimization
-    private let minimumDistance: Double = 5.0 // meters
-    private let minimumTimeInterval: TimeInterval = 2.0 // seconds
-    private let maximumAccuracy: Double = 10.0 // meters (will be overridden by activity-specific values)
+    // Route optimization - RELAXED for better accuracy
+    private let minimumDistance: Double = 2.0 // meters (reduced from 5.0)
+    private let minimumTimeInterval: TimeInterval = 1.0 // seconds (reduced from 2.0)
+    private let maximumAccuracy: Double = 20.0 // meters (increased from 10.0)
     
-    // GPS drift detection and stationary filtering
-    private let stationarySpeedThreshold: Double = 0.5 // m/s - below this is considered stationary
-    private let movementSpeedThreshold: Double = 1.0 // m/s - above this resumes distance tracking
-    private let stationaryTimeThreshold: TimeInterval = 10.0 // seconds - how long to be stationary before pausing
+    // GPS drift detection and stationary filtering - DISABLED for now
+    // These were causing distance tracking to stop mid-workout
+    private let stationarySpeedThreshold: Double = 0.1 // m/s - very low threshold
+    private let movementSpeedThreshold: Double = 0.3 // m/s - lower threshold for resuming
+    private let stationaryTimeThreshold: TimeInterval = 30.0 // seconds - increased from 10.0
     private var stationaryStartTime: Date?
-    private var isStationary: Bool = false
+    private var isStationary: Bool = false // Disabled by default
     
     // Speed validation for outlier rejection
     private let maxRunningSpeed: Double = 8.0 // m/s (18 mph)
     private let maxWalkingSpeed: Double = 4.0 // m/s (9 mph)  
     private let maxCyclingSpeed: Double = 20.0 // m/s (45 mph)
     
-    // Activity-specific accuracy thresholds
+    // Activity-specific accuracy thresholds - RELAXED for better tracking
     private var currentActivityType: ActivityType?
     private var activitySpecificAccuracy: Double {
         guard let activityType = currentActivityType else { return maximumAccuracy }
         switch activityType {
-        case .running: return 5.0
-        case .walking: return 8.0
-        case .cycling: return 10.0
+        case .running: return 10.0  // Increased from 5.0
+        case .walking: return 15.0  // Increased from 8.0
+        case .cycling: return 20.0  // Increased from 10.0
         }
     }
     
-    // Simple Kalman filter for GPS smoothing
+    // Simple Kalman filter for GPS smoothing - REDUCED smoothing
     private var smoothedSpeed: Double = 0.0
     private var smoothedSpeedVariance: Double = 1.0
-    private let processNoise: Double = 0.1 // How much we expect speed to change
-    private let measurementNoise: Double = 0.5 // GPS speed measurement uncertainty
+    private let processNoise: Double = 0.3 // Increased from 0.1 for less smoothing
+    private let measurementNoise: Double = 0.3 // Reduced from 0.5 for more trust in GPS
     
     // Additional smoothing for distance calculation
     private var locationHistory: [CLLocation] = []
@@ -107,7 +108,6 @@ class LocationService: NSObject, ObservableObject {
             self.isTracking = true
             self.isPaused = false
             self.route.removeAll()
-            self.totalDistance = 0.0
             self.lastLocation = nil
             self.currentSpeed = 0.0
             self.currentPace = 0.0
@@ -155,9 +155,7 @@ class LocationService: NSObject, ObservableObject {
         // Always disable background location updates when stopping
         locationManager.allowsBackgroundLocationUpdates = false
         
-        // Access totalDistance safely for logging
-        let distance = totalDistance
-        print("✅ Stopped GPS tracking. Total distance: \(String(format: "%.2f", distance/1000))km")
+        print("✅ Stopped GPS tracking for route visualization")
     }
     
     func pauseTracking() {
@@ -191,14 +189,7 @@ class LocationService: NSObject, ObservableObject {
         print("▶️ Resumed GPS tracking")
     }
     
-    var averagePace: Double {
-        guard totalDistance > 0, !route.isEmpty else { return 0.0 }
-        
-        let totalTime = route.last?.timestamp.timeIntervalSince(route.first?.timestamp ?? Date()) ?? 0
-        let distanceKm = totalDistance / 1000.0
-        
-        return (totalTime / 60.0) / distanceKm // minutes per km
-    }
+    // Removed averagePace - now calculated from HealthKit distance only
     
     var routeCoordinates: [CLLocationCoordinate2D] {
         return route.map { $0.coordinate }
@@ -394,58 +385,40 @@ extension LocationService: CLLocationManagerDelegate {
                 return
             }
             
-            // GPS drift detection and stationary filtering
-            if currentCalculatedSpeed <= stationarySpeedThreshold {
-                // User appears to be stationary
+            // GPS drift detection - SIMPLIFIED and less aggressive
+            // Only stop tracking if user is COMPLETELY stationary for extended period
+            if currentCalculatedSpeed <= stationarySpeedThreshold && location.speed < 0.1 {
+                // User might be stationary - but be very conservative
                 if stationaryStartTime == nil {
                     stationaryStartTime = Date()
-                    print("🛑 Potential stationary period detected (speed: \(String(format: "%.2f", currentCalculatedSpeed))m/s)")
+                    print("🛑 Very slow movement detected (speed: \(String(format: "%.2f", currentCalculatedSpeed))m/s)")
                 } else if let startTime = stationaryStartTime,
                           Date().timeIntervalSince(startTime) >= stationaryTimeThreshold {
-                    // User has been stationary long enough - pause distance tracking
-                    if !isStationary {
-                        isStationary = true
-                        print("⏸️ Stationary mode activated - pausing distance tracking")
-                    }
-                    // Skip distance accumulation but continue adding to route for visualization
-                    DispatchQueue.main.async {
-                        self.route.append(location)
-                        self.lastLocation = location
-                        self.currentSpeed = 0.0
-                        self.currentPace = 0.0
-                    }
-                    return
+                    // User has been nearly motionless for 30+ seconds
+                    print("⚠️ User appears stationary but continuing to track for accuracy")
+                    // Continue tracking but log it - don't stop distance accumulation
                 }
-            } else if currentCalculatedSpeed >= movementSpeedThreshold {
-                // User is moving again - resume tracking
-                if isStationary {
-                    isStationary = false
-                    print("▶️ Movement detected - resuming distance tracking (speed: \(String(format: "%.2f", currentCalculatedSpeed))m/s)")
+            } else {
+                // Any movement resets stationary timer
+                if stationaryStartTime != nil {
+                    stationaryStartTime = nil
+                    print("🏃 Movement detected - speed: \(String(format: "%.2f", currentCalculatedSpeed))m/s")
                 }
-                stationaryStartTime = nil
             }
             
-            // Only accumulate distance if not in stationary mode
-            if !isStationary {
-                // Get smoothed distance for more accurate tracking
-                let smoothedDistance = getSmoothedDistance(from: location, to: lastLoc)
-                
-                // Calculate running metrics
-                DispatchQueue.main.async {
-                    self.totalDistance += smoothedDistance
+            // Only update speed for display purposes (not used for distance)
+            DispatchQueue.main.async {
+                if timeInterval > 0 {
+                    // Use smoothed speed from Kalman filter
+                    self.currentSpeed = currentCalculatedSpeed
                     
-                    if timeInterval > 0 && smoothedDistance > 0 {
-                        // Use smoothed speed from Kalman filter
-                        self.currentSpeed = currentCalculatedSpeed
-                        
-                        // Current pace (min/km) using smoothed speed
-                        if self.currentSpeed > 0.1 { // Avoid division by very small numbers
-                            self.currentPace = (1000.0 / self.currentSpeed) / 60.0
-                        }
+                    // Current pace (min/km) using smoothed speed (display only)
+                    if self.currentSpeed > 0.1 { // Avoid division by very small numbers
+                        self.currentPace = (1000.0 / self.currentSpeed) / 60.0
                     }
                 }
-                print("📍 Distance added: \(String(format: "%.1f", smoothedDistance))m (raw: \(String(format: "%.1f", distance))m), Smoothed Speed: \(String(format: "%.2f", currentCalculatedSpeed))m/s")
             }
+            print("📍 GPS Route point added, Speed: \(String(format: "%.2f", currentCalculatedSpeed))m/s")
         }
         
         // Add location to route (if not already added in stationary mode)
@@ -456,7 +429,7 @@ extension LocationService: CLLocationManagerDelegate {
             }
         }
         
-        print("📍 Location updated: accuracy=\(String(format: "%.1f", location.horizontalAccuracy))m, distance=\(String(format: "%.0f", totalDistance))m")
+        print("📍 Location updated: accuracy=\(String(format: "%.1f", location.horizontalAccuracy))m")
     }
     
     func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {

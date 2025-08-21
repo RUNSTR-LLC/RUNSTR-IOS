@@ -225,23 +225,42 @@ struct ProfileView: View {
                     .fill(Color.runstrGray.opacity(0.3))
                     .frame(width: 80, height: 80)
                     .overlay(
-                        Image(systemName: "person.fill")
-                            .font(.title)
-                            .foregroundColor(.runstrGray)
+                        Group {
+                            if authService.isLoadingProfile {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .runstrGray))
+                            } else {
+                                Image(systemName: "person.fill")
+                                    .font(.title)
+                                    .foregroundColor(.runstrGray)
+                            }
+                        }
                     )
             }
             
             // User info
             VStack(spacing: RunstrSpacing.xs) {
-                Text(user.profile.displayName.isEmpty ? "RUNSTR User" : user.profile.displayName)
-                    .font(.runstrTitle)
-                    .foregroundColor(.runstrWhite)
+                HStack {
+                    Text(user.profile.displayName.isEmpty ? "RUNSTR User" : user.profile.displayName)
+                        .font(.runstrTitle)
+                        .foregroundColor(.runstrWhite)
+                    
+                    if authService.isLoadingProfile && user.profile.displayName.isEmpty {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .runstrGray))
+                            .scaleEffect(0.6)
+                    }
+                }
                 
                 if !user.profile.about.isEmpty {
                     Text(user.profile.about)
                         .font(.runstrBody)
                         .foregroundColor(.runstrGray)
                         .multilineTextAlignment(.center)
+                } else if authService.isLoadingProfile {
+                    Text("Loading profile...")
+                        .font(.runstrCaption)
+                        .foregroundColor(.runstrGray)
                 }
             }
         }

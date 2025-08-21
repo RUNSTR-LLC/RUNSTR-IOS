@@ -5,10 +5,12 @@ import Combine
 @MainActor
 class WorkoutStorage: ObservableObject {
     @Published var workouts: [Workout] = []
+    @Published var nostrWorkouts: [Workout] = []
     @Published var isLoading = false
     
     private let userDefaults = UserDefaults.standard
     private let workoutsKey = "stored_workouts"
+    private let nostrWorkoutsKey = "cached_nostr_workouts"
     
     init() {
         // Don't load workouts during init to avoid blocking app startup
@@ -131,6 +133,76 @@ class WorkoutStorage: ObservableObject {
         persistWorkouts()
     }
     
+    // MARK: - Nostr Workout Caching
+    
+    /// Cache Nostr workouts locally
+    func cacheNostrWorkouts(_ nostrWorkouts: [Workout]) {
+        // Filter out duplicates and keep only Nostr source workouts
+        let validNostrWorkouts = nostrWorkouts.filter { $0.source == .nostr }
+        
+        // Merge with existing cached workouts
+        var allCachedWorkouts = self.nostrWorkouts
+        
+        for newWorkout in validNostrWorkouts {
+            // Check for duplicates by Nostr event ID
+            if let eventID = newWorkout.nostrEventID,
+               !allCachedWorkouts.contains(where: { $0.nostrEventID == eventID }) {
+                allCachedWorkouts.append(newWorkout)
+            }
+        }
+        
+        // Update the published property
+        self.nostrWorkouts = allCachedWorkouts.sorted { $0.startTime > $1.startTime }
+        
+        // Persist to UserDefaults
+        persistNostrWorkouts()
+        
+        print("✅ Cached \(self.nostrWorkouts.count) Nostr workouts locally")
+    }
+    
+    /// Load cached Nostr workouts from storage
+    func loadCachedNostrWorkouts() {
+        guard let data = userDefaults.data(forKey: nostrWorkoutsKey) else {
+            print("ℹ️ No cached Nostr workouts found")
+            return
+        }
+        
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            nostrWorkouts = try decoder.decode([Workout].self, from: data)
+            print("✅ Loaded \(nostrWorkouts.count) cached Nostr workouts")
+        } catch {
+            print("❌ Failed to load cached Nostr workouts: \(error)")
+            nostrWorkouts = []
+        }
+    }
+    
+    /// Get all workouts (local + Nostr)
+    func getAllWorkoutsIncludingNostr() -> [Workout] {
+        ensureWorkoutsLoaded()
+        let combined = workouts + nostrWorkouts
+        return combined.sorted { $0.startTime > $1.startTime }
+    }
+    
+    /// Get workouts by source
+    func getWorkoutsBySource(_ source: WorkoutSource) -> [Workout] {
+        switch source {
+        case .local:
+            ensureWorkoutsLoaded()
+            return workouts
+        case .nostr:
+            return nostrWorkouts
+        }
+    }
+    
+    /// Clear cached Nostr workouts
+    func clearCachedNostrWorkouts() {
+        nostrWorkouts.removeAll()
+        userDefaults.removeObject(forKey: nostrWorkoutsKey)
+        print("✅ Cleared cached Nostr workouts")
+    }
+    
     // MARK: - Private Methods
     
     private func loadWorkouts() {
@@ -163,6 +235,18 @@ class WorkoutStorage: ObservableObject {
             print("✅ Persisted \(workouts.count) workouts to storage")
         } catch {
             print("❌ Failed to persist workouts: \(error)")
+        }
+    }
+    
+    private func persistNostrWorkouts() {
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(nostrWorkouts)
+            userDefaults.set(data, forKey: nostrWorkoutsKey)
+            print("✅ Persisted \(nostrWorkouts.count) Nostr workouts to cache")
+        } catch {
+            print("❌ Failed to persist Nostr workouts: \(error)")
         }
     }
     

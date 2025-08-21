@@ -113,6 +113,7 @@ struct SimpleWorkoutSummaryView: View {
     
     private func formatSpeed() -> String {
         // Calculate speed from distance and duration
+        guard workout.duration > 0 else { return "0.0 km/h" } // Avoid division by zero
         let speedKmh = workout.distance / 1000 / (workout.duration / 3600)
         let useMetric = UserDefaults.standard.object(forKey: "useMetricUnits") as? Bool ?? true
         

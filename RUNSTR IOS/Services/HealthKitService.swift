@@ -10,7 +10,8 @@ class HealthKitService: NSObject, ObservableObject {
     @Published var authorizationStatus: HKAuthorizationStatus = .notDetermined
     @Published var currentHeartRate: Double?
     @Published var currentCalories: Double = 0
-    // currentSteps now calculated in WorkoutSession from distance
+    @Published var currentDistance: Double = 0  // Distance from HealthKit in meters
+    @Published var currentSteps: Int = 0
     @Published var isWorkoutActive = false
     
     // Individual permission tracking
@@ -27,6 +28,8 @@ class HealthKitService: NSObject, ObservableObject {
     // private var workoutBuilder: HKWorkoutBuilder? // not needed for basic implementation
     private var heartRateQuery: HKAnchoredObjectQuery?
     private var calorieQuery: HKAnchoredObjectQuery?
+    private var distanceQuery: HKStatisticsQuery?
+    private var stepsQuery: HKStatisticsQuery?
     private var cancellables = Set<AnyCancellable>()
     
     private let typesToRead: Set<HKObjectType> = [
@@ -242,7 +245,8 @@ class HealthKitService: NSObject, ObservableObject {
     private func startRealTimeQueries() {
         startHeartRateQuery()
         startCalorieQuery()
-        // Step counting now handled by distance-based estimation in WorkoutSession
+        startDistanceQuery()
+        startStepsQuery()
     }
     
     private func stopRealTimeQueries() {
@@ -256,7 +260,15 @@ class HealthKitService: NSObject, ObservableObject {
             self.calorieQuery = nil
         }
         
-        // Step counting cleanup no longer needed - using distance-based estimation
+        if let distanceQuery = distanceQuery {
+            healthStore.stop(distanceQuery)
+            self.distanceQuery = nil
+        }
+        
+        if let stepsQuery = stepsQuery {
+            healthStore.stop(stepsQuery)
+            self.stepsQuery = nil
+        }
     }
     
     private func startHeartRateQuery() {
@@ -345,7 +357,168 @@ class HealthKitService: NSObject, ObservableObject {
         }
     }
     
+    private func startDistanceQuery() {
+        guard isAuthorized, let startTime = workoutStartTime else { return }
+        
+        // Use appropriate distance type based on activity
+        let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+        let predicate = HKQuery.predicateForSamples(withStart: startTime,
+                                                   end: Date(),
+                                                   options: .strictStartDate)
+        
+        // Use HKStatisticsQuery to get cumulative sum directly from HealthKit
+        distanceQuery = HKStatisticsQuery(
+            quantityType: distanceType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { [weak self] _, statistics, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("❌ HealthKit distance query error: \(error.localizedDescription)")
+                return
+            }
+            
+            // Get the cumulative sum from HealthKit
+            if let sumQuantity = statistics?.sumQuantity() {
+                let totalDistance = sumQuantity.doubleValue(for: HKUnit.meter())
+                
+                DispatchQueue.main.async {
+                    self.currentDistance = totalDistance
+                    print("📊 HealthKit Distance: \(String(format: "%.0f", totalDistance))m")
+                }
+            }
+        }
+        
+        if let query = distanceQuery {
+            healthStore.execute(query)
+            
+            // Set up a timer to refresh the query periodically
+            Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                self?.refreshDistanceQuery()
+            }
+        }
+    }
     
+    private func refreshDistanceQuery() {
+        guard isAuthorized, let startTime = workoutStartTime else { return }
+        
+        // Stop the old query
+        if let oldQuery = distanceQuery {
+            healthStore.stop(oldQuery)
+        }
+        
+        // Create new query with updated end time
+        let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+        let predicate = HKQuery.predicateForSamples(withStart: startTime,
+                                                   end: Date(),
+                                                   options: .strictStartDate)
+        
+        distanceQuery = HKStatisticsQuery(
+            quantityType: distanceType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { [weak self] _, statistics, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("❌ HealthKit distance refresh error: \(error.localizedDescription)")
+                return
+            }
+            
+            if let sumQuantity = statistics?.sumQuantity() {
+                let totalDistance = sumQuantity.doubleValue(for: HKUnit.meter())
+                
+                DispatchQueue.main.async {
+                    self.currentDistance = totalDistance
+                }
+            }
+        }
+        
+        if let query = distanceQuery {
+            healthStore.execute(query)
+        }
+    }
+    
+    private func startStepsQuery() {
+        guard isAuthorized, let startTime = workoutStartTime else { return }
+        
+        let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let predicate = HKQuery.predicateForSamples(withStart: startTime,
+                                                   end: Date(),
+                                                   options: .strictStartDate)
+        
+        // Use HKStatisticsQuery for steps as well
+        stepsQuery = HKStatisticsQuery(
+            quantityType: stepsType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { [weak self] _, statistics, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("❌ HealthKit steps query error: \(error.localizedDescription)")
+                return
+            }
+            
+            if let sumQuantity = statistics?.sumQuantity() {
+                let totalSteps = sumQuantity.doubleValue(for: HKUnit.count())
+                
+                DispatchQueue.main.async {
+                    self.currentSteps = Int(totalSteps)
+                    print("👟 HealthKit Steps: \(Int(totalSteps))")
+                }
+            }
+        }
+        
+        if let query = stepsQuery {
+            healthStore.execute(query)
+            
+            // Refresh steps periodically
+            Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                self?.refreshStepsQuery()
+            }
+        }
+    }
+    
+    private func refreshStepsQuery() {
+        guard isAuthorized, let startTime = workoutStartTime else { return }
+        
+        // Stop the old query
+        if let oldQuery = stepsQuery {
+            healthStore.stop(oldQuery)
+        }
+        
+        let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let predicate = HKQuery.predicateForSamples(withStart: startTime,
+                                                   end: Date(),
+                                                   options: .strictStartDate)
+        
+        stepsQuery = HKStatisticsQuery(
+            quantityType: stepsType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum
+        ) { [weak self] _, statistics, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("❌ HealthKit steps refresh error: \(error.localizedDescription)")
+                return
+            }
+            
+            if let sumQuantity = statistics?.sumQuantity() {
+                let totalSteps = sumQuantity.doubleValue(for: HKUnit.count())
+                
+                DispatchQueue.main.async {
+                    self.currentSteps = Int(totalSteps)
+                }
+            }
+        }
+        
+        if let query = stepsQuery {
+            healthStore.execute(query)
+        }
+    }
     
     func fetchRecentWorkouts(completion: @escaping ([HKWorkout]) -> Void) {
         guard isAuthorized else {
