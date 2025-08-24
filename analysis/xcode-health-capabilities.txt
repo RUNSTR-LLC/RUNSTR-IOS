@@ -1,0 +1,4 @@
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "RUNSTR needs access to read your health data including heart rate, workouts, and activity data to track your fitness activities and provide accurate metrics.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "RUNSTR needs permission to save your workout data to HealthKit so it can be shared with other health apps and your Apple Watch.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "RUNSTR needs access to read your health data including heart rate, workouts, and activity data to track your fitness activities and provide accurate metrics.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "RUNSTR needs permission to save your workout data to HealthKit so it can be shared with other health apps and your Apple Watch.";

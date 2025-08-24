@@ -1,0 +1,19 @@
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Info.plist:    <key>NSHealthShareUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Info.plist:    <key>NSHealthUpdateUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/analysis/info-plist-dump.txt:  "NSHealthShareUsageDescription" => "RUNSTR needs access to read your health data including heart rate, workouts, and activity data to track your fitness activities and provide accurate metrics."
+/Users/dakotabrown/RUNSTR-IOS/analysis/info-plist-dump.txt:  "NSHealthUpdateUsageDescription" => "RUNSTR needs permission to save your workout data to HealthKit so it can be shared with other health apps and your Apple Watch."
+/Users/dakotabrown/RUNSTR-IOS/analysis/xcode-health-capabilities.txt:				INFOPLIST_KEY_NSHealthShareUsageDescription = "RUNSTR needs access to read your health data including heart rate, workouts, and activity data to track your fitness activities and provide accurate metrics.";
+/Users/dakotabrown/RUNSTR-IOS/analysis/xcode-health-capabilities.txt:				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "RUNSTR needs permission to save your workout data to HealthKit so it can be shared with other health apps and your Apple Watch.";
+/Users/dakotabrown/RUNSTR-IOS/analysis/xcode-health-capabilities.txt:				INFOPLIST_KEY_NSHealthShareUsageDescription = "RUNSTR needs access to read your health data including heart rate, workouts, and activity data to track your fitness activities and provide accurate metrics.";
+/Users/dakotabrown/RUNSTR-IOS/analysis/xcode-health-capabilities.txt:				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "RUNSTR needs permission to save your workout data to HealthKit so it can be shared with other health apps and your Apple Watch.";
+/Users/dakotabrown/RUNSTR-IOS/Info.plist.bak:    <key>NSHealthShareUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/Info.plist.bak:    <key>NSHealthUpdateUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/APPLE_DEVELOPER_SETUP.md:<key>NSHealthShareUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/APPLE_DEVELOPER_SETUP.md:<key>NSHealthUpdateUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/CONFIGURATION.md:<key>NSHealthShareUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/CONFIGURATION.md:<key>NSHealthUpdateUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/scripts/activity-tracker-bugfix-hook.sh:    grep -r "NSHealthShareUsageDescription\|NSHealthUpdateUsageDescription" "$PROJECT_ROOT" > "$ANALYSIS_DIR/health-usage-descriptions.txt" 2>/dev/null || echo "No health usage descriptions found" > "$ANALYSIS_DIR/health-usage-descriptions.txt"
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS.xcodeproj/project.pbxproj:				INFOPLIST_KEY_NSHealthShareUsageDescription = "RUNSTR needs access to read your health data including heart rate, workouts, and activity data to track your fitness activities and provide accurate metrics.";
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS.xcodeproj/project.pbxproj:				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "RUNSTR needs permission to save your workout data to HealthKit so it can be shared with other health apps and your Apple Watch.";
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS.xcodeproj/project.pbxproj:				INFOPLIST_KEY_NSHealthShareUsageDescription = "RUNSTR needs access to read your health data including heart rate, workouts, and activity data to track your fitness activities and provide accurate metrics.";
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS.xcodeproj/project.pbxproj:				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "RUNSTR needs permission to save your workout data to HealthKit so it can be shared with other health apps and your Apple Watch.";

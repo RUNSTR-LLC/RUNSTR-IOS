@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var showingImportKeyWarning = false
     @State private var importedNsec = ""
     @State private var importError = ""
+    @State private var showingSignOutAlert = false
     
     var body: some View {
         NavigationView {
@@ -65,6 +66,15 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Importing a private key (nsec) has security risks. Your key could be exposed if pasted from an insecure source. We recommend using your Apple ID with auto-generated keys instead. Only proceed if you understand these risks.")
+        }
+        .alert("Sign Out", isPresented: $showingSignOutAlert) {
+            Button("Sign Out", role: .destructive) {
+                authService.signOut()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to sign out? You will need to sign in again to access your Nostr identity.")
         }
         .sheet(isPresented: $showingImportKeyModal) {
             ImportKeyView(
@@ -223,10 +233,10 @@ struct SettingsView: View {
                 } label: {
                     HStack {
                         Image(systemName: "key.horizontal")
-                            .foregroundColor(.orange)
+                            .foregroundColor(.runstrWhite)
                         Text("Export Private Key")
                             .font(.runstrBody)
-                            .foregroundColor(.orange)
+                            .foregroundColor(.runstrWhite)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.runstrCaption)
@@ -241,10 +251,28 @@ struct SettingsView: View {
                 } label: {
                     HStack {
                         Image(systemName: "key.horizontal.fill")
-                            .foregroundColor(.blue)
+                            .foregroundColor(.runstrWhite)
                         Text("Import Private Key")
                             .font(.runstrBody)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.runstrWhite)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.runstrCaption)
+                            .foregroundColor(.runstrGray)
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.top, RunstrSpacing.sm)
+                
+                Button {
+                    showingSignOutAlert = true
+                } label: {
+                    HStack {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .foregroundColor(.red)
+                        Text("Sign Out")
+                            .font(.runstrBody)
+                            .foregroundColor(.red)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.runstrCaption)

@@ -1,0 +1,8 @@
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOSUITests/RUNSTR_IOSUITests.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Models/Workout.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/RUNSTR_IOSApp.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Views/DashboardView.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Views/WorkoutView.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Views/OnboardingView.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Services/HealthKitService.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Services/LocationService.swift

@@ -1,0 +1,51 @@
+228:    var hkWorkoutActivityType: HKWorkoutActivityType {
+518:    static func from(hkWorkout: HKWorkout) -> ActivityType {
+26:    // For iOS implementation, we don't use HKWorkoutSession
+27:    // private var workoutSession: HKWorkoutSession? // watchOS only
+28:    // private var workoutBuilder: HKWorkoutBuilder? // not needed for basic implementation
+36:        HKQuantityType.quantityType(forIdentifier: .heartRate)!,
+37:        HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!,
+38:        HKQuantityType.quantityType(forIdentifier: .basalEnergyBurned)!,
+39:        HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+40:        HKQuantityType.quantityType(forIdentifier: .distanceCycling)!,
+41:        HKQuantityType.quantityType(forIdentifier: .stepCount)!,
+42:        HKQuantityType.quantityType(forIdentifier: .vo2Max)!,
+44:        HKWorkoutType.workoutType()
+48:        HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!,
+49:        HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+50:        HKQuantityType.quantityType(forIdentifier: .distanceCycling)!,
+52:        HKWorkoutType.workoutType()
+71:            let heartRateAuth = healthStore.authorizationStatus(for: HKQuantityType.quantityType(forIdentifier: .heartRate)!)
+72:            let workoutAuth = healthStore.authorizationStatus(for: HKWorkoutType.workoutType())
+73:            let stepAuth = healthStore.authorizationStatus(for: HKQuantityType.quantityType(forIdentifier: .stepCount)!)
+118:    func endWorkoutSession() async -> HKWorkout? {
+143:        // Use HKWorkoutBuilder for iOS 17+
+147:                    let configuration = HKWorkoutConfiguration()
+150:                    let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: configuration, device: .local())
+165:                        let calorieQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
+166:                        let calorieSample = HKQuantitySample(type: HKQuantityType(.activeEnergyBurned), 
+181:                    let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: workout.distance)
+182:                    let distanceSample = HKQuantitySample(type: HKQuantityType(.distanceWalkingRunning), 
+207:                    let _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<HKWorkout?, Error>) in
+219:                    print("Failed to save workout with HKWorkoutBuilder: \(error.localizedDescription)")
+225:            let hkWorkout = HKWorkout(
+230:                totalEnergyBurned: workout.calories.map { HKQuantity(unit: .kilocalorie(), doubleValue: $0) },
+231:                totalDistance: HKQuantity(unit: .meter(), doubleValue: workout.distance),
+277:        let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+307:        let calorieType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
+335:        guard let heartRateSamples = samples as? [HKQuantitySample],
+347:        guard let calorieSamples = samples as? [HKQuantitySample] else { return }
+364:        let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+412:        let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+446:        let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+492:        let stepsType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+523:    func fetchRecentWorkouts(completion: @escaping ([HKWorkout]) -> Void) {
+537:            let workouts = samples as? [HKWorkout] ?? []
+53:    func testHKWorkoutActivityTypeMappings() {
+54:        // Test that all activity types map to valid HKWorkoutActivityType
+56:            (ActivityType.running, HKWorkoutActivityType.running),
+57:            (ActivityType.walking, HKWorkoutActivityType.walking),
+58:            (ActivityType.cycling, HKWorkoutActivityType.cycling)
+73:            XCTAssertNotNil(hkType, "Activity type \(activityType) should map to a valid HKWorkoutActivityType")
+76:            let configuration = HKWorkoutConfiguration()
+81:                          "Should be able to create HKWorkoutConfiguration for \(activityType)")

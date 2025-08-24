@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Simple test script for RUNSTR permissions
+echo "📱 RUNSTR Permission Test"
+echo "========================"
+echo ""
+echo "1. Delete app from device if installed"
+echo "2. Install fresh build from Xcode"
+echo "3. Launch app and verify:"
+echo "   ✓ HealthKit permission prompt appears within 30 seconds"
+echo "   ✓ Location permission prompt appears"
+echo "   ✓ Both permissions can be granted"
+echo "4. Start a test workout and verify:"
+echo "   ✓ GPS tracking begins"
+echo "   ✓ Distance starts accumulating"
+echo "   ✓ Data saves to HealthKit"
+echo ""
+echo "⚠️  This test requires a physical iOS device (HealthKit not available on simulator)"
+echo ""
+echo "To run this test:"
+echo "1. Connect physical iOS device"
+echo "2. Run: xcodebuild clean build -scheme 'RUNSTR IOS' -destination 'platform=iOS,name=YourDevice'"
+echo "3. Install and test manually"

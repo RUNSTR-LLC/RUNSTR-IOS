@@ -1,0 +1,16 @@
+457:        guard locationService.authorizationStatus == .authorizedWhenInUse || 
+458:              locationService.authorizationStatus == .authorizedAlways else {
+349:        if locationService.authorizationStatus == .notDetermined {
+409:        if locationService.authorizationStatus == .notDetermined {
+10:    @Published var authorizationStatus: HKAuthorizationStatus = .notDetermined
+71:            let heartRateAuth = healthStore.authorizationStatus(for: HKQuantityType.quantityType(forIdentifier: .heartRate)!)
+72:            let workoutAuth = healthStore.authorizationStatus(for: HKWorkoutType.workoutType())
+73:            let stepAuth = healthStore.authorizationStatus(for: HKQuantityType.quantityType(forIdentifier: .stepCount)!)
+76:                self.authorizationStatus = heartRateAuth
+9:    @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+73:        authorizationStatus = locationManager.authorizationStatus
+80:        switch authorizationStatus {
+100:        guard authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse else {
+133:        if authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse {
+435:    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
+437:            self.authorizationStatus = status

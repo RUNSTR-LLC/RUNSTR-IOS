@@ -1,0 +1,10 @@
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Info.plist:    <key>NSLocationWhenInUseUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/analysis/info-plist-dump.txt:  "NSLocationWhenInUseUsageDescription" => "RUNSTR needs access to your location to track your route, distance, and pace during workouts."
+/Users/dakotabrown/RUNSTR-IOS/Info.plist.bak:    <key>NSLocationWhenInUseUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/APPLE_DEVELOPER_SETUP.md:<key>NSLocationWhenInUseUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/CONFIGURATION.md:<key>NSLocationWhenInUseUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/scripts/quick-fix-permissions.sh:    if grep -q "NSLocationWhenInUseUsageDescription" "$info_plist"; then
+/Users/dakotabrown/RUNSTR-IOS/scripts/quick-fix-permissions.sh:<key>NSLocationWhenInUseUsageDescription</key>
+/Users/dakotabrown/RUNSTR-IOS/scripts/activity-tracker-bugfix-hook.sh:    grep -r "NSLocationWhenInUseUsageDescription\|NSLocationAlwaysUsageDescription" "$PROJECT_ROOT" > "$ANALYSIS_DIR/location-permissions.txt" 2>/dev/null || echo "No location permissions found" > "$ANALYSIS_DIR/location-permissions.txt"
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS.xcodeproj/project.pbxproj:				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RUNSTR needs access to your location to track your route, distance, and pace during workouts.";
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS.xcodeproj/project.pbxproj:				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RUNSTR needs access to your location to track your route, distance, and pace during workouts.";

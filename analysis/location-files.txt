@@ -1,0 +1,4 @@
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Models/Workout.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Services/HealthKitService.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Services/NostrService.swift
+/Users/dakotabrown/RUNSTR-IOS/RUNSTR IOS/Services/LocationService.swift

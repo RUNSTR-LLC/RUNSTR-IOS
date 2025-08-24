@@ -34,15 +34,12 @@ struct RUNSTR_IOSApp: App {
                         healthKitService: healthKitService,
                         locationService: locationService
                     )
-                    
-                    // Request initial permissions for HealthKit and location
-                    await requestInitialPermissions()
                 }
         }
     }
     
     @MainActor
-    func requestInitialPermissions() async {
+    private func requestInitialPermissions() async {
         // Request HealthKit authorization
         let _ = await healthKitService.requestAuthorization()
         

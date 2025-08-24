@@ -607,12 +607,12 @@ class WorkoutSession: ObservableObject {
         let totalTime = Date().timeIntervalSince(startTime)
         elapsedTime = totalTime - totalPausedTime
         
-        // Use HealthKit as the ONLY source for distance and steps
-        if let healthKitService = healthKitService {
+        // Use GPS for live distance tracking (HealthKit has no data during active workouts)
+        if let locationService = locationService {
             let oldDistance = currentDistance
             
-            // Use HealthKit distance exclusively
-            currentDistance = healthKitService.currentDistance
+            // Use GPS distance for live tracking
+            currentDistance = locationService.totalDistance
             
             // Calculate pace based on current distance and elapsed time
             if currentDistance > 0 && elapsedTime > 0 {
@@ -621,9 +621,9 @@ class WorkoutSession: ObservableObject {
             }
             
             // Use actual steps from HealthKit
-            currentSteps = healthKitService.currentSteps
-            currentHeartRate = healthKitService.currentHeartRate
-            currentCalories = healthKitService.currentCalories
+            currentSteps = healthKitService?.currentSteps ?? 0
+            currentHeartRate = healthKitService?.currentHeartRate
+            currentCalories = healthKitService?.currentCalories ?? 0
             
             // Update splits when distance changes
             if abs(currentDistance - oldDistance) > 10 { // 10+ meters change
