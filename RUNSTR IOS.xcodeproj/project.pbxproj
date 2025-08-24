@@ -33,22 +33,9 @@
 		2DE376262E344D9400A4FAD0 /* RUNSTR IOSUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "RUNSTR IOSUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		2DE37ADB2E42A3F900A4FAD0 /* Exceptions for "RUNSTR IOS" folder in "RUNSTR IOS" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 2DE3760E2E344D9300A4FAD0 /* RUNSTR IOS */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		2DE376112E344D9300A4FAD0 /* RUNSTR IOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				2DE37ADB2E42A3F900A4FAD0 /* Exceptions for "RUNSTR IOS" folder in "RUNSTR IOS" target */,
-			);
 			path = "RUNSTR IOS";
 			sourceTree = "<group>";
 		};

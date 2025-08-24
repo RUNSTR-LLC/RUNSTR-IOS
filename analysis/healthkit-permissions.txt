@@ -1,8 +1,0 @@
-44:        let _ = await healthKitService.requestAuthorization()
-341:            let healthKitAuthorized = await healthKitService.requestAuthorization()
-401:            let healthKitAuthorized = await healthKitService.requestAuthorization()
-8:    private let healthStore = HKHealthStore()
-58:        // requestAuthorization()
-61:    func requestAuthorization() async -> Bool {
-62:        guard HKHealthStore.isHealthDataAvailable() else {
-68:            try await healthStore.requestAuthorization(toShare: typesToWrite, read: typesToRead)

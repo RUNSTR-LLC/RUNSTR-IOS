@@ -9,7 +9,8 @@
       "Bash(grep:*)",
       "Bash(sed:*)",
       "Bash(./scripts/activity-tracker-bugfix-hook.sh report:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

@@ -1,2 +1,0 @@
-82:            locationManager.requestWhenInUseAuthorization()
-86:            locationManager.requestAlwaysAuthorization()
